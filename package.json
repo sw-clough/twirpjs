@@ -1,0 +1,29 @@
+{
+  "name": "twirpjs",
+  "version": "0.0.1",
+  "description": "Experimental streaming twirp client built on protobuf.js",
+  "main": "twirp_transport.js",
+  "directories": {
+    "example": "example"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gnarbox/twirpjs.git"
+  },
+  "keywords": [
+    "twirp",
+    "rpc",
+    "websockets",
+    "are",
+    "dead"
+  ],
+  "author": "Mike Lemmon <lemmon@gnarbox.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/gnarbox/twirpjs/issues"
+  },
+  "homepage": "https://github.com/gnarbox/twirpjs#readme"
+}
