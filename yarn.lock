@@ -2877,9 +2877,9 @@ process-nextick-args@~2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/process-nextick-args/-/process-nextick-args-2.0.0.tgz#a37d732f4271b4ab1ad070d35508e8290788ffaa"
 
-"protobufjs@git+ssh://git@bitbucket.org:gnarbox1/protobuf.js.git#master":
+"protobufjs@git+ssh:git@bitbucket.org:gnarbox1/protobuf.js#90d7fd641c5d4cef1738d040c79565e7c238a206":
   version "6.8.7"
-  resolved "git+ssh://git@bitbucket.org:gnarbox1/protobuf.js.git#6c74454093e5f76c9e79d3810f3390f697ee3328"
+  resolved "git+ssh:git@bitbucket.org:gnarbox1/protobuf.js#90d7fd641c5d4cef1738d040c79565e7c238a206"
   dependencies:
     "@protobufjs/aspromise" "^1.1.2"
     "@protobufjs/base64" "^1.1.2"
