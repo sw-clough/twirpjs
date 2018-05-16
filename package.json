@@ -7,7 +7,7 @@
     "example": "example"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "repository": {
     "type": "git",
@@ -16,14 +16,24 @@
   "keywords": [
     "twirp",
     "rpc",
-    "websockets",
-    "are",
-    "dead"
+    "protobuf"
   ],
   "author": "Mike Lemmon <lemmon@gnarbox.com>",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/gnarbox/twirpjs/issues"
   },
-  "homepage": "https://github.com/gnarbox/twirpjs#readme"
+  "homepage": "https://github.com/gnarbox/twirpjs#readme",
+  "dependencies": {
+    "protobufjs": "git+ssh://git@bitbucket.org:gnarbox1/protobuf.js.git#master",
+    "rxjs": "^6.1.0"
+  },
+  "devDependencies": {
+    "babel-core": "^6.26.3",
+    "babel-jest": "^22.4.3",
+    "babel-preset-env": "^1.7.0",
+    "babel-preset-react": "^6.24.1",
+    "jest": "^22.4.3",
+    "regenerator-runtime": "^0.11.1"
+  }
 }
