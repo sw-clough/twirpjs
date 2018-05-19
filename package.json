@@ -2,7 +2,8 @@
   "name": "twirpjs",
   "version": "0.0.1",
   "description": "Experimental streaming twirp client built on protobuf.js",
-  "main": "transports.js",
+  "main": "index.js",
+  "bin": { "gen_twirpjs": "./gen_twirpjs/index.js" },
   "scripts": {
     "test": "jest"
   },
@@ -22,14 +23,14 @@
   },
   "homepage": "https://github.com/gnarbox/twirpjs#readme",
   "dependencies": {
-    "protobufjs": "git+ssh:git@bitbucket.org:gnarbox1/protobuf.js#90d7fd641c5d4cef1738d040c79565e7c238a206",
-    "rxjs": "^6.1.0"
+    "protobufjs": "git+ssh:git@bitbucket.org:gnarbox1/protobuf.js#90d7fd641c5d4cef1738d040c79565e7c238a206"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",
     "babel-jest": "^22.4.3",
     "babel-preset-env": "^1.7.0",
     "babel-preset-react": "^6.24.1",
+    "commander": "^2.15.1",
     "jest": "^22.4.3",
     "regenerator-runtime": "^0.11.1"
   }
