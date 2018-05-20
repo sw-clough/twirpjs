@@ -23,7 +23,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gnarbox/twirpjs/example/twirper"
+	// "github.com/gnarbox/twirpjs/example/twirper"
+	"bitbucket.org/gnarbox1/twirpjs/examples/twirper"
 	// "github.com/rs/cors" // CORS handling for twirper web client
 	"github.com/twitchtv/twirp"
 )

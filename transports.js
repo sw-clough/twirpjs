@@ -18,6 +18,9 @@ TRANSPORT_TYPES.DEFAULT = ORIGINAL // can be overridden by RegisterTransportGene
 // Register a TransportGenerator
 // Generator signature: (twirpURL, options) => (method, requestCtor, responseCtor, request, callback)
 export function RegisterTransportGenerator({ name, generator, setAsDefault }) {
+	if (TRANSPORT_TYPES[name] === name) {
+		throw new Error(`A twirpjs transport generator has already been registered for the type ${name}`)
+	}
 	TRANSPORT_TYPES[name] = name
 	if (setAsDefault) { TRANSPORT_TYPES.DEFAULT = name }
 	TransportGenerators[name] = generator
@@ -27,8 +30,8 @@ const _clients = {} // cache for clients that have already been created
 export default function NewTwirpClient(hostURL, options = {}) {
 	const {
 		serviceRoute, serviceClass, // required
-		transportType,    // (optional) one of TRANSPORT_TYPES
-		createRpcImpl,    // required when using TRANSPORT_TYPE.ORIGINAL
+		transportType, // (optional) one of TRANSPORT_TYPES
+		createRpcImpl, // required when using TRANSPORT_TYPE.ORIGINAL (protobuf.js-style transport)
 	} = options
 	const clientKey = `${transportType}:${hostURL}/${serviceRoute}` // for caching the client
 	if (_clients[clientKey]) { return _clients[clientKey] }
@@ -37,8 +40,8 @@ export default function NewTwirpClient(hostURL, options = {}) {
 		? createRpcImpl(twirpURL, options)
 		: () => { throw(new Error(`Current transport type ${transportType || 'DEFAULT'} requires the createRpcImpl option`)) }
 	client = serviceClass.create(rpcImpl)
-	client.rpcCall = GetRpcCall(twirpURL, options)
-	_clients[clientKey] = client
+	client.rpcCall = GetRpcCall(twirpURL, options) // Override protobuf.js's implementation of rpcCall
+	_clients[clientKey] = client // cache the client
 	return client
 }
 
@@ -48,3 +51,13 @@ export function GetRpcCall(twirpURL, opts = {}) {
 	if (typeof TransportGenerators[tt] !== 'function') { throw(new Error(`Unsupported rpc transport type: ${tt}`)) }
 	return TransportGenerators[tt](twirpURL, opts)
 }
+
+//
+// Transport implementations
+//
+RegisterTransportGenerator({
+	name: 'XHR_PROMISE',
+	setAsDefault: false,
+	generator: (twirpURL, { streamingMethods }) => (method, requestCtor, responseCtor, request) => {
+	}
+})

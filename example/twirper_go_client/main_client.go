@@ -24,7 +24,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gnarbox/twirpjs/example/twirper"
+	// "github.com/gnarbox/twirpjs/example/twirper"
+	"bitbucket.org/gnarbox1/twirpjs/examples/twirper"
 	"github.com/twitchtv/twirp"
 )
 
