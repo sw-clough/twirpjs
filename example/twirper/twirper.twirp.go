@@ -326,10 +326,14 @@ func (s *twirperServer) serveEchoJSON(ctx context.Context, resp http.ResponseWri
 
 func (s *twirperServer) serveEchoProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
 	var err error
+	writeProtoError := func(err error) {
+		s.writeError(ctx, resp, err)
+	}
+
 	ctx = ctxsetters.WithMethodName(ctx, "Echo")
 	ctx, err = callRequestRouted(ctx, s.hooks)
 	if err != nil {
-		s.writeError(ctx, resp, err)
+		writeProtoError(err)
 		return
 	}
 
@@ -337,13 +341,13 @@ func (s *twirperServer) serveEchoProtobuf(ctx context.Context, resp http.Respons
 	buf, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		err = wrapErr(err, "failed to read request body")
-		s.writeError(ctx, resp, twirp.InternalErrorWith(err))
+		writeProtoError(twirp.InternalErrorWith(err))
 		return
 	}
 	reqContent := new(EchoReq)
 	if err = proto.Unmarshal(buf, reqContent); err != nil {
 		err = wrapErr(err, "failed to parse request proto")
-		s.writeError(ctx, resp, twirp.InternalErrorWith(err))
+		writeProtoError(twirp.InternalErrorWith(err))
 		return
 	}
 
@@ -410,11 +414,42 @@ func (s *twirperServer) serveRepeatJSON(ctx context.Context, resp http.ResponseW
 }
 
 func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
-	var err error
+	var (
+		err        error
+		respStream RepeatRespStream
+	)
+
+	// Prepare trailer
+	trailer := proto.NewBuffer(nil)
+	_ = trailer.EncodeVarint((2 << 3) | 2) // field tag
+	writeProtoError := func(err error) {
+		// JSON encode err as twirp err
+		// TODO: figure out what to do about updating context and headers
+		if err == io.EOF {
+			trailer.EncodeStringBytes("EOF")
+			return
+		}
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		_ = trailer.EncodeStringBytes(
+			string(marshalErrorToJSON(twerr)),
+		)
+	}
+	defer func() { // Send trailer
+		_, err = resp.Write(trailer.Bytes())
+		if err != nil {
+			// TODO: call error hook?
+			err = wrapErr(err, "failed to write trailer")
+			respStream.End(err)
+		}
+	}()
+
 	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
 	ctx, err = callRequestRouted(ctx, s.hooks)
 	if err != nil {
-		s.writeError(ctx, resp, err)
+		writeProtoError(err)
 		return
 	}
 
@@ -422,23 +457,22 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 	buf, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		err = wrapErr(err, "failed to read request body")
-		s.writeError(ctx, resp, twirp.InternalErrorWith(err))
+		writeProtoError(twirp.InternalErrorWith(err))
 		return
 	}
 	reqContent := new(RepeatReq)
 	if err = proto.Unmarshal(buf, reqContent); err != nil {
 		err = wrapErr(err, "failed to parse request proto")
-		s.writeError(ctx, resp, twirp.InternalErrorWith(err))
+		writeProtoError(twirp.InternalErrorWith(err))
 		return
 	}
 
 	// Call service method
-	var respStream RepeatRespStream
 	func() {
 		defer func() {
 			// In case of a panic, serve a 500 error and then panic.
 			if r := recover(); r != nil {
-				s.writeError(ctx, resp, twirp.InternalError("Internal service panic"))
+				writeProtoError(twirp.InternalError("Internal service panic"))
 				panic(r)
 			}
 		}()
@@ -446,32 +480,23 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 	}()
 
 	if err != nil {
-		s.writeError(ctx, resp, err)
+		writeProtoError(err)
 		return
 	}
 
 	if respStream == nil {
-		s.writeError(ctx, resp, twirp.InternalError("received a nil RepeatReq and nil error while calling Repeat. nil responses are not supported"))
+		writeProtoError(twirp.InternalError("received a nil RepeatReq and nil error while calling Repeat. nil responses are not supported"))
 		return
 	}
 
-	respFlusher, canFlush := resp.(http.Flusher)
-
 	ctx = callResponsePrepared(ctx, s.hooks)
 
+	respFlusher, canFlush := resp.(http.Flusher)
 	messages := proto.NewBuffer(nil)
-
-	trailer := proto.NewBuffer(nil)
-	_ = trailer.EncodeVarint((2 << 3) | 2) // field tag
 	for {
 		msg, err := respStream.Next(ctx)
 		if err != nil {
-			// TODO: figure out trailers' proto encoding beyond just a string
-			if err == io.EOF {
-				_ = trailer.EncodeStringBytes("OK")
-			} else {
-				_ = trailer.EncodeStringBytes(err.Error())
-			}
+			writeProtoError(err)
 			break
 		}
 
@@ -492,6 +517,7 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 		}
 
 		if canFlush {
+			// TODO: come up with a batching scheme to improve performance under high load
 			respFlusher.Flush()
 		}
 
@@ -1006,7 +1032,6 @@ func (r protoStreamReader) Read(msg proto.Message) error {
 	if int(l) < 0 || int(l) > r.maxSize {
 		return io.ErrShortBuffer
 	}
-
 	if tag == msgTag {
 		buf := make([]byte, int(l))
 
@@ -1023,12 +1048,12 @@ func (r protoStreamReader) Read(msg proto.Message) error {
 		return nil
 	}
 
-	// This is a trailer, read it
+	// This is a trailer, read it and then close the client
 	defer r.c.Close()
 	buf := make([]byte, int(l))
 	_, err = io.ReadFull(r.r, buf)
 	if err != nil {
-		return wrapErr(err, "failed to read trailer")
+		return err
 	}
 
 	// Put the length back in front of the trailer so it can be decoded
@@ -1036,15 +1061,16 @@ func (r protoStreamReader) Read(msg proto.Message) error {
 	var trailer string
 	trailer, err = proto.NewBuffer(buf).DecodeStringBytes()
 	if err != nil {
-		return wrapErr(err, "failed to decode trailer")
+		return clientError("failed to read stream trailer", err)
 	}
-	if trailer == io.EOF.Error() || trailer == "OK" {
+	if trailer == "EOF" {
 		return io.EOF
 	}
-	if trailer == "" {
-		return twirp.InternalError("empty trailer")
+	var tj twerrJSON
+	if err = json.Unmarshal([]byte(trailer), &tj); err != nil {
+		return clientError("unable to decode stream trailer", err)
 	}
-	return twirp.InternalError(trailer)
+	return tj.toTwirpError()
 }
 
 type jsonStreamReader struct {

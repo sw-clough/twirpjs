@@ -4,8 +4,8 @@ import { rpc } from 'protobufjs/minimal'
 export const ToHex = (x) => '0x' + ('00' + x.toString(16)).slice(-2)
 export const ToHexArray = (arr) => Array.prototype.map.call(arr, ToHex).join(' ')
 
-// TwirpJS transports override protobuf.js's implementation of "rpcCall",
-// the original implementation is saved as the transport type 'ORIGINAL'
+// TwirpJS transports override protobuf.js's implementation of "rpcCall", the original implementation
+// is saved as the transport type 'ORIGINAL' and requires use of the createRpcImpl option
 const ORIGINAL = 'ORIGINAL'
 export const TransportGenerators = {
 	[ORIGINAL]: (origRpcCall => {
@@ -51,13 +51,3 @@ export function GetRpcCall(twirpURL, opts = {}) {
 	if (typeof TransportGenerators[tt] !== 'function') { throw(new Error(`Unsupported rpc transport type: ${tt}`)) }
 	return TransportGenerators[tt](twirpURL, opts)
 }
-
-//
-// Transport implementations
-//
-RegisterTransportGenerator({
-	name: 'XHR_PROMISE',
-	setAsDefault: false,
-	generator: (twirpURL, { streamingMethods }) => (method, requestCtor, responseCtor, request) => {
-	}
-})

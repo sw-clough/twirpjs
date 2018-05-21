@@ -6,12 +6,11 @@ for (let kk of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
 	XHR_READYSTATE[XMLHttpRequest[kk]] = kk
 	XHR_READYSTATE[kk] = XMLHttpRequest[kk]
 }
-// console.log('Readystate mapping:', XHR_READYSTATE)
 export { XHR_READYSTATE }
 
 // Streaming tags. For reference see:
-// * go client: service.twirp.go: protoStreamReader#Read
-// * go server: service.twirp.go: haberdasherServer#serveMakeHatsProtobuf
+// * go client: <service>.twirp.go: protoStreamReader#Read
+// * go server: <service>.twirp.go: <service>Server#serve<MethodName>Protobuf
 export const STREAMING_TAGS = {
 	MESSAGE: (1 << 3) | 2, // key for streaming message field #1, length-delimited
 	TRAILER: (2 << 3) | 2, // key for streaming message field #2, length-delimited

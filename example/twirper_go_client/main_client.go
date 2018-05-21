@@ -24,9 +24,7 @@ import (
 	"net/http"
 	"os"
 
-	// "github.com/gnarbox/twirpjs/example/twirper"
-	"bitbucket.org/gnarbox1/twirpjs/examples/twirper"
-	"github.com/twitchtv/twirp"
+	"github.com/gnarbox/twirpjs/example/twirper"
 )
 
 var (
@@ -44,8 +42,8 @@ var (
 func main() {
 	port := flag.Int(`p`, 8888, `the port on which the server is listening`)
 	host := flag.String(`h`, `http://localhost`, `where to look for the server`)
-	cancelAfter := flag.Int(`c`, -1, `after this many messages, cancel the streaming request's context (no cancel if c < 0)`)
-	endAfter := flag.Int(`e`, -1, `after this many messages, call End on the response stream (does nothing if e < 0)`)
+	cancelAfter := flag.Int(`cancel`, -1, `after this many messages, cancel the streaming request's context (no cancel if c < 0)`)
+	endAfter := flag.Int(`end`, -1, `after this many messages, call End on the response stream (does nothing if e < 0)`)
 	repetitions := flag.Int(`n`, int(repeatReq.NumRepeats), `number of streaming messages to request from the server`)
 	delayMs := flag.Int(`d`, int(repeatReq.DelayMs), `milliseconds delay between streamed response messages`)
 	errAfter := flag.Int(`err`, int(repeatReq.ErrAfter), `tell the server to return an error after this many streaming messages`)
@@ -67,45 +65,24 @@ func main() {
 		repeatRespStream twirper.RepeatRespStream
 	)
 
-	for i := 0; i < 5; i++ {
-		echoResp, err = client.Echo(context.Background(), echoReq)
-		if err != nil {
-			if twerr, ok := err.(twirp.Error); ok {
-				if twerr.Meta("retryable") != "" {
-					// Log the error and go again.
-					log.Printf("got error %q, retrying", twerr)
-					continue
-				}
-			}
-			// This was some fatal error!
-			log.Fatal(err)
-		}
-		break
+	echoResp, err = client.Echo(context.Background(), echoReq)
+	if err != nil {
+		log.Fatal(err)
 	}
 	fmt.Printf("\tResponse from Echo(%+v):\n\t\t%+v\n", echoReq, echoResp)
 
 	// Ask for a stream of hats
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	for i := 0; i < 5; i++ {
-		repeatRespStream, err = client.Repeat(ctx, repeatReq)
-		if err != nil {
-			if twerr, ok := err.(twirp.Error); ok {
-				if twerr.Meta("retryable") != "" {
-					// Log the error and go again.
-					log.Printf("got error %q, retrying", twerr)
-					continue
-				}
-			}
-			// This was some fatal error!
-			log.Fatal(err)
-		}
-		break
+	defer cancel() // cancel is indepotent but must be called, so call it on exit no matter what
+	repeatRespStream, err = client.Repeat(ctx, repeatReq)
+	if err != nil {
+		log.Fatal(err)
 	}
 	fmt.Printf("\tResponse from Repeat(%+v):\n", repeatReq)
 	var lastID int32 = 0
 	for {
 		if lastID == int32(*endAfter) {
+			// Question: Should End() ever be used by the client?
 			fmt.Println("\t\t<Abruptly ending stream>")
 			repeatRespStream.End(fmt.Errorf(`I'm hanging up`))
 			break // otherwise Next() errors because the request is closed
