@@ -8,8 +8,8 @@
     "proto",
     "ptypes/struct"
   ]
-  revision = "925541529c1fa6821df4e44ce2723319eb2be768"
-  version = "v1.0.0"
+  revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
+  version = "v1.1.0"
 
 [[projects]]
   name = "github.com/rs/cors"
@@ -18,19 +18,18 @@
   version = "v1.3.0"
 
 [[projects]]
-  branch = "v6_streams_alpha"
   name = "github.com/twitchtv/twirp"
   packages = [
     ".",
     "ctxsetters",
     "internal/contextkeys"
   ]
-  revision = "3623780ebf425990ba9fd5d3f5d4f6524d1a6c87"
+  revision = "7ce909891615ba82"
   source = "github.com/gnarbox/twirp"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "96e93d56b7a7474c85e1b7ed367af4e723d0107eda1579c708df09aeb44055ba"
+  inputs-digest = "a0c1ec8add81259516e8f8dca8663122b988ac72fbfdbb346bfe4c113b11ad81"
   solver-name = "gps-cdcl"
   solver-version = 1
