@@ -523,13 +523,6 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 
 		// TODO: Call a hook that we sent a message in a stream?
 	}
-
-	_, err = resp.Write(trailer.Bytes())
-	if err != nil {
-		// TODO: call error hook?
-		err = wrapErr(err, "failed to write trailer")
-		respStream.End(err)
-	}
 }
 
 func (s *twirperServer) ServiceDescriptor() ([]byte, int) {

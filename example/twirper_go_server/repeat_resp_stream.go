@@ -38,7 +38,8 @@ func newRepeatRespStream(req *twirper.RepeatReq) *repeatRespStream {
 
 func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, error) {
 	if rs.req.ErrAfter != 0 && rs.repeated == rs.req.ErrAfter {
-		err := twirp.NewError(twirp.Unknown, `you wanted this "unknown" error`)
+		err := twirp.NewError(twirp.Unknown, `you wanted this error`)
+		err = err.WithMeta(`extra_info`, `goes in meta`)
 		log.Printf("(repeatRespStream#Next) Client requested an error, returning error %#v", err)
 		return nil, err
 	}
@@ -47,6 +48,15 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 		return nil, io.EOF
 	}
 	rs.repeated++
+
+	var delay <-chan time.Time
+	if rs.req.DelayMs == 0 {
+		dd := make(chan time.Time, 1)
+		dd <- time.Now()
+		delay = dd
+	} else {
+		delay = time.After(time.Duration(rs.req.DelayMs) * time.Millisecond)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -60,7 +70,7 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 		// // Things get really weird if you don't return an error...
 		// return &twirper.RepeatResp{Message: err.Error()}, nil
 
-	case <-time.After(time.Duration(rs.req.DelayMs) * time.Millisecond):
+	case <-delay:
 		resp := &twirper.RepeatResp{
 			Message:   rs.req.Message,
 			DelayedMs: time.Since(rs.lastTime).Nanoseconds() / 1000000,

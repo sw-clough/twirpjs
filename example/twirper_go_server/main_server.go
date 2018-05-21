@@ -26,8 +26,15 @@ import (
 	"github.com/twitchtv/twirp"
 )
 
+// Don't use twirp's InvalidArgument function because the message prints weirdly
+func invalidArgumentError(argument, validationMsg string) twirp.Error {
+	err := twirp.NewError(twirp.InvalidArgument, validationMsg)
+	err = err.WithMeta("argument", argument)
+	return err
+}
+
 var (
-	errSilenceIsAbhorent = twirp.InvalidArgumentError(`Message`, `I won't be silent`)
+	errSilenceIsAbhorent = invalidArgumentError(`Message`, `I won't be silent`)
 )
 
 type theTwirper struct{}
@@ -57,7 +64,8 @@ func (tt *theTwirper) Repeat(ctx context.Context, req *twirper.RepeatReq) (twirp
 
 func main() {
 	server := twirper.NewTwirperServer(&theTwirper{}, nil)
-	handler := cors.Default().Handler(server) // Wrap the server with a liberal (unsafe?) cors policy so the react example works
+	// Wrap the server with a liberal (unsafe?) cors policy so the react example works
+	handler := cors.Default().Handler(server)
 	log.Println(`Listening on port 8888`)
 	log.Fatal(http.ListenAndServe(`:8888`, handler))
 }

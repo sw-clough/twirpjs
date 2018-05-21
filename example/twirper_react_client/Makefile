@@ -1,0 +1,11 @@
+
+generate: twirper.twirp
+
+%.twirp:
+	$(eval basename=$(@:.twirp=))
+	$(eval proto_file=../$(basename).proto)
+	$(eval out_dir=./src)
+	$(eval twirp_file=$(out_dir)/$(basename).twirp.js)
+	$(eval pbjs_file=$(out_dir)/$(basename).pb.js)
+	npx pbjs --target static-module --es6 --keep-case-all $(proto_file) -o $(pbjs_file)
+	npx gen_twirpjs $(proto_file) > $(twirp_file)

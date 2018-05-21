@@ -15,6 +15,7 @@ setup:
 
 generate:
 	$(RETOOL) do protoc --go_out=twirper --twirp_out=twirper twirper.proto
+	@$(MAKE) -C twirper_react_client generate
 
 run-server:
 	GOBIN=$(CURDIR)/bin go install -v ./twirper_go_server
