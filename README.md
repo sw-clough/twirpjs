@@ -2,15 +2,17 @@
 
 [twirp](https://github.com/twitchtv/twirp) is a protobuf-based RPC transport spec with a great golang implementation. This repo aims to be a worthy javascript client implementation, built with [protobuf.js](https://github.com/dcodeIO/protobuf.js)
 
-See the example directory and [react-native-streaming-xhr](https://github.com/gnarbox/react-native-streaming-xhr) for usage
+See the example directory for usage.
 
-## Usage
+Experiments with streaming twirps are happening on the v6_streams_alpha branch.
+
+## Installation and code generation
 
 	# Install gnarbox fork of protobuf.js (PR pending to upstream repo)
 	yarn add https://github.com/gnarbox/protobuf.js
 
 	# Generate js protobuf file with protobuf.js's pbjs command
-	npx pbjs --target static-module --es6 --keep-case <SERVICE>.proto -o <SERVICE>.pb.js
+	npx pbjs --target static-module --es6 --keep-case-all <SERVICE>.proto -o <SERVICE>.pb.js
 
 	# Install twirpjs
 	yarn add https://github.com/gnarbox/twirpjs
