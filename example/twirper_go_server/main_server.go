@@ -50,6 +50,18 @@ func (tt *theTwirper) Echo(ctx context.Context, req *twirper.EchoReq) (*twirper.
 	return req, nil
 }
 
+func (tt *theTwirper) Repeat(ctx context.Context, req *twirper.RepeatReq) (twirper.RepeatRespStream, error) {
+	fmt.Println()
+	log.Printf("(theTwirper#Repeat) Repeat called with %#v", req)
+	if req.Message == `` {
+		return nil, errSilenceIsAbhorent
+	}
+	if req.NumRepeats <= 0 {
+		return nil, errSilenceIsAbhorent
+	}
+	return newRepeatRespStream(req), nil
+}
+
 func main() {
 	server := twirper.NewTwirperServer(&theTwirper{}, nil)
 	// Wrap the server with a liberal (unsafe?) cors policy so the react example works

@@ -33,10 +33,20 @@ And then import the twirp file to create and use a twirp client:
 		console.error('request failed:', err)
 	}
 
+	// Call rpc methods with streaming responses
+	try {
+		const req = { <RequestFieldA>: <ValueA>, <RequestFieldB>: <ValueB> }
+		await client.<MethodName>(req, resp => {
+			console.log('received a streamed response:', resp)
+		})
+	} catch (err) {
+		console.error('request failed:', err)
+	}
+
 ## TODO
 
 - [x] ~~[transports] Create a default promise transport~~
-- [x] ~~[example] Create an example react web-app with twirpjs client~~
+- [x] ~~[example] Create an example react web-app client~~
 - [ ] [README] Add warning about how this repo uses a temporary fork of protobufjs for the new "keep-case-all" pbjs flag
 - [ ] [tests] Get some coverage going
 - [ ] [README] Explain registration and selection of new transport types

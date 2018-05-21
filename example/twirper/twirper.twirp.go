@@ -27,6 +27,8 @@ import io "io"
 import strconv "strconv"
 import json "encoding/json"
 import url "net/url"
+import bufio "bufio"
+import binary "encoding/binary"
 
 // =================
 // Twirper Interface
@@ -36,6 +38,9 @@ import url "net/url"
 type Twirper interface {
 	// Echo sends back what it received
 	Echo(ctx context.Context, in *EchoReq) (*EchoReq, error)
+
+	// Repeat returns a stream of repeated messages
+	Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error)
 }
 
 // =======================
@@ -44,15 +49,16 @@ type Twirper interface {
 
 type twirperProtobufClient struct {
 	client HTTPClient
-	urls   [1]string
+	urls   [2]string
 }
 
 // NewTwirperProtobufClient creates a Protobuf client that implements the Twirper interface.
 // It communicates using Protobuf and can be configured with a custom HTTPClient.
 func NewTwirperProtobufClient(addr string, client HTTPClient) Twirper {
 	prefix := urlBase(addr) + TwirperPathPrefix
-	urls := [1]string{
+	urls := [2]string{
 		prefix + "Echo",
+		prefix + "Repeat",
 	}
 	if httpClient, ok := client.(*http.Client); ok {
 		return &twirperProtobufClient{
@@ -75,21 +81,53 @@ func (c *twirperProtobufClient) Echo(ctx context.Context, in *EchoReq) (*EchoReq
 	return out, err
 }
 
+func (c *twirperProtobufClient) Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "twirper")
+	ctx = ctxsetters.WithServiceName(ctx, "Twirper")
+	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
+	reqBodyBytes, err := proto.Marshal(in)
+	if err != nil {
+		return nil, clientError("failed to marshal proto request", err)
+	}
+	reqBody := bytes.NewBuffer(reqBodyBytes)
+	if err = ctx.Err(); err != nil {
+		return nil, clientError("aborted because context was done", err)
+	}
+
+	req, err := newRequest(ctx, c.urls[1], reqBody, "application/protobuf")
+	if err != nil {
+		return nil, clientError("could not build request", err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, clientError("failed to do request", err)
+	}
+
+	return &protoRepeatRespStreamReader{
+		prs: protoStreamReader{
+			r:       bufio.NewReader(resp.Body),
+			c:       resp.Body,
+			maxSize: 1 << 21, // 1GB
+		},
+	}, nil
+}
+
 // ===================
 // Twirper JSON Client
 // ===================
 
 type twirperJSONClient struct {
 	client HTTPClient
-	urls   [1]string
+	urls   [2]string
 }
 
 // NewTwirperJSONClient creates a JSON client that implements the Twirper interface.
 // It communicates using JSON and can be configured with a custom HTTPClient.
 func NewTwirperJSONClient(addr string, client HTTPClient) Twirper {
 	prefix := urlBase(addr) + TwirperPathPrefix
-	urls := [1]string{
+	urls := [2]string{
 		prefix + "Echo",
+		prefix + "Repeat",
 	}
 	if httpClient, ok := client.(*http.Client); ok {
 		return &twirperJSONClient{
@@ -110,6 +148,38 @@ func (c *twirperJSONClient) Echo(ctx context.Context, in *EchoReq) (*EchoReq, er
 	out := new(EchoReq)
 	err := doJSONRequest(ctx, c.client, c.urls[0], in, out)
 	return out, err
+}
+
+func (c *twirperJSONClient) Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "twirper")
+	ctx = ctxsetters.WithServiceName(ctx, "Twirper")
+	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
+	reqBodyBytes, err := proto.Marshal(in)
+	if err != nil {
+		return nil, clientError("failed to marshal proto request", err)
+	}
+	reqBody := bytes.NewBuffer(reqBodyBytes)
+	if err = ctx.Err(); err != nil {
+		return nil, clientError("aborted because context was done", err)
+	}
+
+	req, err := newRequest(ctx, c.urls[1], reqBody, "application/json")
+	if err != nil {
+		return nil, clientError("could not build request", err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, clientError("failed to do request", err)
+	}
+
+	jrs, err := newJSONStreamReader(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &jsonRepeatRespStreamReader{
+		jrs: jrs,
+		c:   resp.Body,
+	}, nil
 }
 
 // ======================
@@ -162,6 +232,9 @@ func (s *twirperServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	switch req.URL.Path {
 	case "/twirp/twirper.Twirper/Echo":
 		s.serveEcho(ctx, resp, req)
+		return
+	case "/twirp/twirper.Twirper/Repeat":
+		s.serveRepeat(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -319,6 +392,139 @@ func (s *twirperServer) serveEchoProtobuf(ctx context.Context, resp http.Respons
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *twirperServer) serveRepeat(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveRepeatJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveRepeatProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *twirperServer) serveRepeatJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+}
+
+func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var (
+		err        error
+		respStream RepeatRespStream
+	)
+
+	// Prepare trailer
+	trailer := proto.NewBuffer(nil)
+	_ = trailer.EncodeVarint((2 << 3) | 2) // field tag
+	writeProtoError := func(err error) {
+		// JSON encode err as twirp err
+		// TODO: figure out what to do about updating context and headers
+		if err == io.EOF {
+			trailer.EncodeStringBytes("EOF")
+			return
+		}
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		_ = trailer.EncodeStringBytes(
+			string(marshalErrorToJSON(twerr)),
+		)
+	}
+	defer func() { // Send trailer
+		_, err = resp.Write(trailer.Bytes())
+		if err != nil {
+			// TODO: call error hook?
+			err = wrapErr(err, "failed to write trailer")
+			respStream.End(err)
+		}
+	}()
+
+	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		writeProtoError(err)
+		return
+	}
+
+	resp.Header().Set("Content-Type", "application/protobuf")
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		err = wrapErr(err, "failed to read request body")
+		writeProtoError(twirp.InternalErrorWith(err))
+		return
+	}
+	reqContent := new(RepeatReq)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		err = wrapErr(err, "failed to parse request proto")
+		writeProtoError(twirp.InternalErrorWith(err))
+		return
+	}
+
+	// Call service method
+	func() {
+		defer func() {
+			// In case of a panic, serve a 500 error and then panic.
+			if r := recover(); r != nil {
+				writeProtoError(twirp.InternalError("Internal service panic"))
+				panic(r)
+			}
+		}()
+		respStream, err = s.Repeat(ctx, reqContent)
+	}()
+
+	if err != nil {
+		writeProtoError(err)
+		return
+	}
+
+	if respStream == nil {
+		writeProtoError(twirp.InternalError("received a nil RepeatReq and nil error while calling Repeat. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respFlusher, canFlush := resp.(http.Flusher)
+	messages := proto.NewBuffer(nil)
+	for {
+		msg, err := respStream.Next(ctx)
+		if err != nil {
+			writeProtoError(err)
+			break
+		}
+
+		messages.Reset()
+		_ = messages.EncodeVarint((1 << 3) | 2) // field tag
+		err = messages.EncodeMessage(msg)
+		if err != nil {
+			err = wrapErr(err, "failed to marshal proto message")
+			respStream.End(err)
+			break
+		}
+
+		_, err = resp.Write(messages.Bytes())
+		if err != nil {
+			err = wrapErr(err, "failed to send proto message")
+			respStream.End(err)
+			break
+		}
+
+		if canFlush {
+			// TODO: come up with a batching scheme to improve performance under high load
+			respFlusher.Flush()
+		}
+
+		// TODO: Call a hook that we sent a message in a stream?
+	}
+}
+
 func (s *twirperServer) ServiceDescriptor() ([]byte, int) {
 	return twirpFileDescriptor0, 0
 }
@@ -326,6 +532,43 @@ func (s *twirperServer) ServiceDescriptor() ([]byte, int) {
 func (s *twirperServer) ProtocGenTwirpVersion() string {
 	return "v5.3.0"
 }
+
+// RepeatRespStream represents a stream of RepeatResp messages.
+type RepeatRespStream interface {
+	Next(context.Context) (*RepeatResp, error)
+	End(error)
+}
+
+type protoRepeatRespStreamReader struct {
+	prs protoStreamReader
+}
+
+func (r protoRepeatRespStreamReader) Next(context.Context) (*RepeatResp, error) {
+	out := new(RepeatResp)
+	err := r.prs.Read(out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r protoRepeatRespStreamReader) End(error) { _ = r.prs.c.Close() }
+
+type jsonRepeatRespStreamReader struct {
+	jrs *jsonStreamReader
+	c   io.Closer
+}
+
+func (r jsonRepeatRespStreamReader) Next(context.Context) (*RepeatResp, error) {
+	out := new(RepeatResp)
+	err := r.jrs.Read(out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r jsonRepeatRespStreamReader) End(error) { _ = r.c.Close() }
 
 // =====
 // Utils
@@ -751,13 +994,173 @@ func callError(ctx context.Context, h *twirp.ServerHooks, err twirp.Error) conte
 	return h.Error(ctx, err)
 }
 
+type protoStreamReader struct {
+	r *bufio.Reader
+	c io.Closer
+
+	maxSize int
+}
+
+func (r protoStreamReader) Read(msg proto.Message) error {
+	// Get next field tag.
+	tag, err := binary.ReadUvarint(r.r)
+	if err != nil {
+		return err
+	}
+
+	const (
+		msgTag     = (1 << 3) | 2
+		trailerTag = (2 << 3) | 2
+	)
+
+	if tag != msgTag && tag != trailerTag {
+		return fmt.Errorf("invalid field tag: %v", tag)
+	}
+
+	// This is a real message. How long is it?
+	l, err := binary.ReadUvarint(r.r)
+	if err != nil {
+		return err
+	}
+	if int(l) < 0 || int(l) > r.maxSize {
+		return io.ErrShortBuffer
+	}
+	if tag == msgTag {
+		buf := make([]byte, int(l))
+
+		// Go ahead and read a message.
+		_, err = io.ReadFull(r.r, buf)
+		if err != nil {
+			return err
+		}
+
+		err = proto.Unmarshal(buf, msg)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// This is a trailer, read it and then close the client
+	defer r.c.Close()
+	buf := make([]byte, int(l))
+	_, err = io.ReadFull(r.r, buf)
+	if err != nil {
+		return err
+	}
+
+	// Put the length back in front of the trailer so it can be decoded
+	buf = append(proto.EncodeVarint(l), buf...)
+	var trailer string
+	trailer, err = proto.NewBuffer(buf).DecodeStringBytes()
+	if err != nil {
+		return clientError("failed to read stream trailer", err)
+	}
+	if trailer == "EOF" {
+		return io.EOF
+	}
+	var tj twerrJSON
+	if err = json.Unmarshal([]byte(trailer), &tj); err != nil {
+		return clientError("unable to decode stream trailer", err)
+	}
+	return tj.toTwirpError()
+}
+
+type jsonStreamReader struct {
+	dec               *json.Decoder
+	unmarshaler       *jsonpb.Unmarshaler
+	messageStreamDone bool
+}
+
+func newJSONStreamReader(r io.Reader) (*jsonStreamReader, error) {
+	// stream should start with {"messages":[
+	dec := json.NewDecoder(r)
+	t, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := t.(json.Delim)
+	if !ok || delim != '{' {
+		return nil, fmt.Errorf("missing leading { in JSON stream, found %q", t)
+	}
+
+	t, err = dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	key, ok := t.(string)
+	if !ok || key != "messages" {
+		return nil, fmt.Errorf("missing \"messages\" key in JSON stream, found %q", t)
+	}
+
+	t, err = dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok = t.(json.Delim)
+	if !ok || delim != '[' {
+		return nil, fmt.Errorf("missing [ to open messages array in JSON stream, found %q", t)
+	}
+
+	return &jsonStreamReader{
+		dec:         dec,
+		unmarshaler: &jsonpb.Unmarshaler{AllowUnknownFields: true},
+	}, nil
+}
+
+func (r *jsonStreamReader) Read(msg proto.Message) error {
+	if !r.messageStreamDone && r.dec.More() {
+		return r.unmarshaler.UnmarshalNext(r.dec, msg)
+	}
+
+	// else, we hit the end of the message stream. finish up the array, and then read the trailer.
+	r.messageStreamDone = true
+	t, err := r.dec.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := t.(json.Delim)
+	if !ok || delim != ']' {
+		return fmt.Errorf("missing end of message array in JSON stream, found %q", t)
+	}
+
+	t, err = r.dec.Token()
+	if err != nil {
+		return err
+	}
+	key, ok := t.(string)
+	if !ok || key != "trailer" {
+		return fmt.Errorf("missing trailer after messages in JSON stream, found %q", t)
+	}
+
+	var tj twerrJSON
+	err = r.dec.Decode(&tj)
+	if err != nil {
+		return err
+	}
+
+	if tj.Code == "stream_complete" {
+		return io.EOF
+	}
+
+	return tj.toTwirpError()
+}
+
 var twirpFileDescriptor0 = []byte{
-	// 107 bytes of a gzipped FileDescriptorProto
+	// 234 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x2d, 0x29, 0xcf, 0x2c,
 	0x2a, 0x48, 0x2d, 0xd2, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x87, 0x72, 0x95, 0x94, 0xb9,
 	0xd8, 0x5d, 0x93, 0x33, 0xf2, 0x83, 0x52, 0x0b, 0x85, 0x24, 0xb8, 0xd8, 0x7d, 0x53, 0x8b, 0x8b,
-	0x13, 0xd3, 0x53, 0x25, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x60, 0x5c, 0x23, 0x53, 0x2e, 0xf6,
-	0x10, 0x88, 0x7a, 0x21, 0x2d, 0x2e, 0x16, 0x90, 0x7a, 0x21, 0x01, 0x3d, 0x98, 0x81, 0x50, 0xed,
-	0x52, 0x18, 0x22, 0x4e, 0x9c, 0x51, 0x30, 0x6b, 0x92, 0xd8, 0xc0, 0xd6, 0x1a, 0x03, 0x02, 0x00,
-	0x00, 0xff, 0xff, 0x02, 0x27, 0x93, 0x81, 0x87, 0x00, 0x00, 0x00,
+	0x13, 0xd3, 0x53, 0x25, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x60, 0x5c, 0xa5, 0x6a, 0x2e, 0xce,
+	0xa0, 0xd4, 0x82, 0xd4, 0xc4, 0x12, 0xbc, 0xca, 0x84, 0xe4, 0xb8, 0xb8, 0xfc, 0x4a, 0x73, 0x21,
+	0x2a, 0x8b, 0x25, 0x98, 0x14, 0x18, 0x35, 0x58, 0x83, 0x90, 0x44, 0x40, 0x3a, 0x5d, 0x52, 0x73,
+	0x12, 0x2b, 0x7d, 0x8b, 0x25, 0x98, 0x15, 0x18, 0x35, 0x98, 0x83, 0x60, 0x5c, 0x21, 0x29, 0x2e,
+	0x0e, 0xd7, 0xa2, 0x22, 0xc7, 0xb4, 0x92, 0xd4, 0x22, 0x09, 0x16, 0xb0, 0x3e, 0x38, 0x5f, 0x29,
+	0x84, 0x8b, 0x0b, 0x66, 0x79, 0x71, 0x81, 0x10, 0x1f, 0x17, 0x93, 0xa7, 0x0b, 0x58, 0x3b, 0x6b,
+	0x10, 0x93, 0xa7, 0x0b, 0x1e, 0xd7, 0xc8, 0x70, 0x71, 0x82, 0x8d, 0x4f, 0x4d, 0xf1, 0x85, 0x38,
+	0x86, 0x39, 0x08, 0x21, 0x60, 0x94, 0xc5, 0xc5, 0x1e, 0x02, 0x09, 0x02, 0x21, 0x2d, 0x2e, 0x16,
+	0x50, 0x10, 0x08, 0x09, 0xe8, 0xc1, 0xc2, 0x08, 0x1a, 0x22, 0x52, 0x18, 0x22, 0x42, 0xc6, 0x5c,
+	0x6c, 0x10, 0xc7, 0x08, 0x09, 0xc1, 0xe5, 0xe0, 0x41, 0x23, 0x25, 0x8c, 0x21, 0x56, 0x5c, 0x60,
+	0xc0, 0xe8, 0xc4, 0x19, 0x05, 0x0b, 0xee, 0x24, 0x36, 0x70, 0xf0, 0x1b, 0x03, 0x02, 0x00, 0x00,
+	0xff, 0xff, 0xe3, 0x59, 0xed, 0x7f, 0x8f, 0x01, 0x00, 0x00,
 }

@@ -1,6 +1,6 @@
 {
   "name": "twirper_react_client",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "dependencies": {
     "protobufjs": "gnarbox/protobuf.js#keep-case-all",
