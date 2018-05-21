@@ -1,3 +1,2 @@
-vendor
-trash
-bin
+/vendor
+/bin

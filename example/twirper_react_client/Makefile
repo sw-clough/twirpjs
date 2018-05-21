@@ -1,5 +1,10 @@
 
+all: install generate
+
 generate: twirper.twirp
+
+install:
+	yarn
 
 %.twirp:
 	$(eval basename=$(@:.twirp=))

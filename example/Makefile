@@ -6,12 +6,10 @@ all: setup generate run-server
 
 setup:
 	./install_proto.bash
-	# Install retool, dep, protoc-gen-go, and vendored go dependencies
+	# Install retool, dep, protoc-gen-go, protoc-gen-twirp, and vendored go dependencies
 	GOPATH=$(CURDIR)/_tools go install "github.com/twitchtv/retool/..."
 	$(RETOOL) build
 	$(RETOOL) do dep ensure -v
-	# Install the gnarbox fork of twirp/protoc-gen-twirp (see ./Gopkg.toml)
-	GOBIN="${PWD}/_tools/bin" go install -v "github.com/twitchtv/twirp/protoc-gen-twirp"
 
 generate:
 	$(RETOOL) do protoc --go_out=twirper --twirp_out=twirper twirper.proto
