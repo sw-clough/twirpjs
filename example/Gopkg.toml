@@ -5,5 +5,4 @@
 
 [[constraint]]
   name = "github.com/twitchtv/twirp"
-  source = "github.com/gnarbox/twirp"
-  branch = "v6_streams_alpha"
+  branch = "master"

@@ -26,9 +26,3 @@ run-go-client:
 	$(eval client=./bin/twirper_go_client)
 	@echo "\n### Running client with default options"
 	$(client)
-	@echo "\n### Running again, but have the server return an error after the fifth message"
-	$(client) -err=5 || true
-	@echo "\n### Cancel the request context after the fifth message"
-	$(client) -cancel=5 || true
-	@echo "\n### Call End() on the response stream after the fifth message"
-	$(client) -end=5 || true

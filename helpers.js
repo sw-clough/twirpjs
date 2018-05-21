@@ -1,27 +1,12 @@
 import utf8 from '@protobufjs/utf8'
 
-// XHR status-to-string and string-to-status map
-const XHR_READYSTATE = {}
-for (let kk of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
-	XHR_READYSTATE[XMLHttpRequest[kk]] = kk
-	XHR_READYSTATE[kk] = XMLHttpRequest[kk]
-}
-export { XHR_READYSTATE }
-
-// Streaming tags. For reference see:
-// * go client: <service>.twirp.go: protoStreamReader#Read
-// * go server: <service>.twirp.go: <service>Server#serve<MethodName>Protobuf
-export const STREAMING_TAGS = {
-	MESSAGE: (1 << 3) | 2, // key for streaming message field #1, length-delimited
-	TRAILER: (2 << 3) | 2, // key for streaming message field #2, length-delimited
-}
-
 export const ERROR_CODES = {
 	SERVER_UNAVAILABLE: 'server_unavailable',
 }
 
 //
 // Twirp error helpers
+// TODO: Make these less ghastly (e.g. abstract out all the xhr stuff)
 //
 export function TwirpError(obj) {
 	var err = new Error(obj.msg)

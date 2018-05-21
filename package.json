@@ -1,6 +1,6 @@
 {
   "name": "twirpjs",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Experimental streaming twirp client built on protobuf.js",
   "main": "index.js",
   "bin": {
@@ -25,7 +25,7 @@
   },
   "homepage": "https://github.com/gnarbox/twirpjs#readme",
   "dependencies": {
-    "protobufjs": "git+ssh:git@bitbucket.org:gnarbox1/protobuf.js#2c6fa1a72dd96c4c25bcb3892dc917e9f410bd8c"
+    "protobufjs": "gnarbox/protobuf.js#keep-case-all"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",

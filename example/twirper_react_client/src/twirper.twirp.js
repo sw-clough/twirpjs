@@ -8,7 +8,7 @@ export function NewTwirperClient(hostURL, opts = {}) {
 	return NewTwirpClient(hostURL, {
 		serviceRoute: 'twirper.Twirper',
 		serviceClass: twirper.Twirper,
-		streamingMethods: ["Repeat"],
+		streamingMethods: null,
 		...opts
 	})
 }
