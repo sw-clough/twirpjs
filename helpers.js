@@ -16,17 +16,21 @@ export const STREAMING_TAGS = {
 	TRAILER: (2 << 3) | 2, // key for streaming message field #2, length-delimited
 }
 
+export const ERROR_CODES = {
+	SERVER_UNAVAILABLE: 'server_unavailable',
+}
+
 //
 // Twirp error helpers
 //
 export function TwirpError(obj) {
-	var err = new Error(obj.msg);
-	err.meta = obj.meta === undefined ? {} : obj.meta;
-	err.code = obj.code;
-	return err;
+	var err = new Error(obj.msg)
+	err.meta = obj.meta === undefined ? {} : obj.meta
+	err.code = obj.code
+	return err
 }
 
-export function IntermediateError(xhr, meta) {
+export function IntermediateError(xhr, meta = {}) {
 	const { status, errorText } = xhr || {}
 	const { message, msg } = meta || {}
 	let mm = ' cause unknown'
@@ -35,22 +39,22 @@ export function IntermediateError(xhr, meta) {
 	}
 	if (errorText) {
 		mm += errorText
-		if (message || msg) { mm += ', ' }
+		if (message || msg) {
+			mm += ', '
+		}
 	}
 	mm += message || msg || ''
 	if (status) {
 		mm += ` (httpstatus=${status})`
 	}
+	meta.status  = xhr.status
+	meta.url     = xhr._url
+	meta.aborted = xhr._aborted
 	return TwirpError({
 		code: 'internal',
-		msg: `[transport failure]` + mm,
-		meta: {
-			status: xhr.status,
-			url: xhr._url,
-			aborted: xhr._aborted,
-			...meta,
-		},
-	});
+		msg: mm,
+		meta,
+	})
 }
 
 // Read twirp Error implementation

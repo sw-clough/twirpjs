@@ -6,13 +6,16 @@ See the example directory and [react-native-streaming-xhr](https://github.com/gn
 
 ## Usage
 
-	# Install twirpjs module
-	yarn add https://github.com/gnarbox/twirpjs
+	# Install gnarbox fork of protobuf.js (PR pending to upstream repo)
+	yarn add https://github.com/gnarbox/protobuf.js
 
-	# Generate js protobuf file
+	# Generate js protobuf file with protobuf.js's pbjs command
 	npx pbjs --target static-module --es6 --keep-case <SERVICE>.proto -o <SERVICE>.pb.js
 
-	# Generate twirp file
+	# Install twirpjs
+	yarn add https://github.com/gnarbox/twirpjs
+
+	# Generate twirp file with twirpjs's gen_twirpjs command
 	npx gen_twirpjs <SERVICE> > <SERVICE>.twirp.js
 
 And then import the twirp file to create and use a twirp client:
@@ -22,12 +25,28 @@ And then import the twirp file to create and use a twirp client:
 	const client = New<SERVICE>Client('http://<HOST_ADDR>')
 
 	// Call rpc methods on client
-	// The return value of the rpc method depends on transport implementation
+	try {
+		const req = { <RequestFieldA>: <ValueA>, <RequestFieldB>: <ValueB> }
+		const resp = await client.<MethodName>(req)
+		console.log('received a response:', resp)
+	} catch (err) {
+		console.error('request failed:', err)
+	}
+
+	// Call rpc methods with streaming responses
+	try {
+		const req = { <RequestFieldA>: <ValueA>, <RequestFieldB>: <ValueB> }
+		await client.<MethodName>(req, resp => {
+			console.log('received a streamed response:', resp)
+		})
+	} catch (err) {
+		console.error('request failed:', err)
+	}
 
 ## TODO
 
-- [ ] [README] Explain registration and selection of transportType
-- [ ] [example] Create an example react web-app client
-- [ ] [transports] Create a default promise transport
+- [x] ~~[transports] Create a default promise transport~~
+- [x] ~~[example] Create an example react web-app client~~
+- [ ] [README] Explain registration and selection of new transport types
 - [ ] [transports] Create a nodejs transport
-- [ ] [transports] Create RxJS transports?
+- [ ] [transports] Create an RxJS transport?
