@@ -5,7 +5,7 @@ const { SERVER_UNAVAILABLE } = ERROR_CODES
 
 const log = (...args) => console.log('[twirpjs/fetch_transport]', ...args)
 
-export default function fetchTransportGenerator(twirpURL, options = {}) {
+export default function FetchTransportGenerator(twirpURL, options = {}) {
 	const { streamingMethods } = options
 	return async function(method, requestCtor, responseCtor, request, callback) {
 		// const ll = (...args) => log(`(${method.name})`, ...args)
@@ -80,7 +80,7 @@ async function readFromStream(reader, responseCtor, callback) {
 					} // stream completed
 					const errMsg = 'Stream ended but previous message was incomplete'
 					// ll(errMsg, missing)
-					const err = new IntermediateError(null, {
+					const err = IntermediateError(null, {
 						message: errMsg,
 						incompleteDataFromPreviousRead: missing,
 					})

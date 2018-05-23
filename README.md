@@ -45,6 +45,10 @@ And then import the twirp file to create and use a twirp client:
 		console.error('request failed:', err)
 	}
 
+## A note on naming conventions
+
+This repository makes the rather controversial decision to use golang-style naming and formatting, meaning that everything exported by this package is ***TitleCased*** and all .proto-file-based classes, types, and methods keep the same casing as in the source .proto file. Among other things, this makes it easy for twirpjs to generate the correct routes. If you're primarily a javascript developer, this will undoubtably annoy you; for us at GNARBOX though, we've been applying golang conventions across languages wherever we can and have found that it has dramatically disambiguated things and reduced cognitive overhead at language boundaries. Win!
+
 ## TODO
 
 - [x] ~~[transports] Create a default promise transport~~
