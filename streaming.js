@@ -11,6 +11,8 @@ import {
 } from './helpers'
 const { MESSAGE, TRAILER, MAX_LEN } = STREAMING_TAGS
 
+export const EOF = 'EOF'
+
 /**
  * @param {Uint8Array} aa
  * @param {Uint8Array} bb
@@ -25,35 +27,24 @@ export function concatByteArrays(aa, bb) {
 	return cc
 }
 
-log = (...args) => console.log('[twirpjs/decode]', ...args)
-
-/*
-function _next(arrayBuf) {
-	const abort = false
-	const extractor = extractMessages(arrayBuf)
-	while (true) {
-		if (abort) { extractor.return(); break }
-		let extraction
-		try { extraction = extractor.next(abort) }
-		catch (err) { return handleError(err) }
-		if (extraction.done) { break }
-		const protoMsg = extraction.value
-		// NB: Separate paths for incomplete vs complete buffers
-		if (protoMsg.isIncomplete) { return handleIncomplete(protoMsg.buffer) }
-		handleMessage(protoMsg.buffer)
+export function parseTwirpError(byteArray) {
+	const errStr = utf8.read(byteArray, 0, byteArray.length)
+	if (errStr.match(/^EOF$/)) {
+		return EOF
 	}
-	// // // Shorter, non-abortable version...
-	// // try {
-	// for (const message [in/of?!] extractMessages(arrayBuf) {
-	// 	if (message.isIncomplete) {
-	// 		leftover = message.buffer
-	// 		break
-	// 	}
-	// 	// decode message.buffer
-	// }
-	// // } catch (err) {}
+	// Received a (twirp) error. Decode it, throw it downstream, and shut everything down
+	let err
+	try {
+		err = TwirpError(JSON.parse(errStr))
+	} catch (decodeErr) {
+		err = IntermediateError(null, {
+			message: `unable to parse error string "${errStr}": ${decodeErr.message}`,
+			errorString: errStr,
+			cause: decodeErr,
+		})
+	}
+	return err
 }
-*/
 
 /**
  * Creates a proto message with a buffer, length, and incompleteness status
@@ -65,13 +56,6 @@ function ProtoMsg(msgBytes, isIncomplete) {
 	this.isIncomplete = isIncomplete
 }
 
-// /**
-//  * Note:
-//  *   The extractor uses ArrayBuffers for input and output instead
-//  *   of Uint8Array because multiple data views (Uint8Arrays) can
-//  *   be created efficiently from an ArrayBuffer, but not from a
-//  *   Uint8Array
-//  */
 export function* extractMessages(byteArray) {
 	const arrayBuf = byteArray.buffer
 	const rr = new Reader(byteArray)
@@ -87,7 +71,7 @@ export function* extractMessages(byteArray) {
 			throw IntermediateError(null, {
 				message: 'received data that appears to not be part of a twirp stream',
 				responseText: errStr,
-				buffer: bb,
+				// buffer: new Uint8Array(arrayBuf, rr.pos, rr.length - rr.pos),
 			})
 		}
 		if (rr.pos >= rr.len) {
@@ -96,7 +80,6 @@ export function* extractMessages(byteArray) {
 			yield new ProtoMsg(new Uint8Array([ msgTag ]), true /* isIncomplete */)
 			return
 		}
-		// const delimStartPos = rr.pos
 
 		// Read message length
 		const msgLen = rr.int32()
@@ -120,23 +103,10 @@ export function* extractMessages(byteArray) {
 
 		if (msgTag === TRAILER) {
 			// Trailers are either "EOF" or a json-encoded twirp error
-			// const errStr = utf8.read(bb.slice(msgStartPos), 0, msgLen)
 			const bb = new Uint8Array(arrayBuf, msgStartPos)
-			const errStr = utf8.read(bb, 0, bb.length)
-			this.log('Got a trailer:', errStr, ToHexArray(bb), { msgStartPos, msgLen, bbLen: bb.length })
-			if (errStr.match(/^EOF$/)) {
+			const err = parseTwirpError(bb)
+			if (err === EOF) {
 				return // We're all done
-			}
-			// Received a (twirp) error. Decode it, throw it downstream, and shut everything down
-			let err
-			try {
-				err = TwirpError(JSON.parse(errStr))
-			} catch (decodeErr) {
-				err = IntermediateError(null, {
-					message: `unable to parse trailer: ${decodeErr.message}`,
-					trailer: errStr,
-					cause: decodeErr,
-				})
 			}
 			throw err
 		}
@@ -146,10 +116,6 @@ export function* extractMessages(byteArray) {
 			yield new ProtoMsg(new Uint8Array(arrayBuf, msgStartPos, msgLen))
 			rr.pos = msgEndPos // update reader position
 		} catch (err) {
-			// this.log('Decode failed', err, { aa }, ToHexArray(aa), {
-			// 	msgLen, leftInBuffer, msgEndPos, readerLen: rr.len, readerPos: rr.pos,
-			// 	bbLength: bb.length, bb: ToHexArray(bb),
-			// })
 			throw IntermediateError(null, {
 				message: `unable to parse message: ${err.message}`,
 				cause: err,
@@ -163,93 +129,3 @@ export function* extractMessages(byteArray) {
 		// There's some bits leftover so we're going for another loop
 	}
 }
-
-
-// class StreamingTwirpMessageExtractor {
-// 	constructor() {
-// 		this.leftover = null // ArrayBuffer
-// 		this.log = (...args) => log('{StreamingTwirpMessageExtractor}', ...args)
-// 	}
-//
-// 	/**
-// 	 * Extracts a single protobuf message from a twirp stream (note: does not decode it)
-// 	 * @function
-// 	 * @param {ArrayBuffer} buf A source for the binary protobuf message to decode
-// 	 // * @returns { {leftover} }
-// 	 // * @throws {Error} If `source` is not a valid type
-// 	 */
-// 	ExtractMessageFromBuffer(buf) {
-// 		const ll = (lggr, ...args) => this.log('(ExtractMessageFromBuffer)', ...args)
-// 		if (!buf || !buf.length) {
-// 			const errMsg = 'received an empty buffer'
-// 			ll('ERROR': errMsg)
-// 			throw new Error(errMsg)
-// 		}
-//
-// 		const bb = concatBuffers(this.leftover, buf)
-// 	}
-//
-// }
-//
-//
-// // /**
-// //  * @classdesc Container a message extracted from a twirp stream, plus a Reader for any bits leftover
-// //  * @param {Uint8Array} Message The extracted proto message
-// //  * @param {Reader|null} Reader A protobuf.js reader pointing to any leftover data from the stream
-// //  */
-// // class StreamingProtoMessages {
-// // 	/**
-// // 	 * Constructs a new StreamingProtoMessage
-// // 	 * @constructor
-// // 	 * @param {Uint8Array} message The extracted proto message
-// // 	 * @param {Reader|null} leftover A protobuf.js reader pointing to any leftover data from the stream
-// // 	 */
-// // 	constructor(message, leftover) {
-// // 		this.Message = message
-// // 		this.Reader = leftover
-// // 	}
-// //
-// // 	/**
-// // 	 * Returns the leftover data as a Uint8Array
-// // 	 * @function
-// // 	 * @returns {Uint8Array|null} An array of leftover data, or null if there are no leftovers
-// // 	 */
-// // 	Leftovers() {
-// // 		if (!this.Reader) { return null }
-// // 		if (this.Reader.pos >= this.Reader.len) { return null }
-// // 		return new Uint8Array(
-// // 			this.Reader.buffer.slice(
-// // 				this.Reader.pos,
-// // 				this.Reader.len - this.Reader.pos,
-// // 			)
-// // 		)
-// // 	}
-// // }
-// //
-// // /**
-// //  * Extracts a single protobuf message from a twirp stream (note: does not decode it)
-// //  * @function
-// //  * @param {Reader|Uint8Array|ArrayBuffer} source A source for the binary protobuf message to decode
-// //  * @returns {StreamingProtoMessage}
-// //  * @throws {Error} If `source` is not a valid type
-// //  */
-// // export function ExtractProtoMessage(source) {
-// // 	if (source instanceof Reader) {
-// // 		return decodeWithReader(source)
-// // 	}
-// // 	if (source instanceof Uint8Array) {
-// // 		return decodeWithBuffer(source)
-// // 	}
-// // 	if (source instanceof TypedArray) {
-// // 		return decodeWithBuffer(new Uint8Array(source))
-// // 	}
-// // 	throw new Error('message source must be a protobuf.js Reader, a Uint8Array, or a TypedArray')
-// // }
-// //
-// // function decodeWithReader(rr) {
-// // }
-// //
-// // function decodeWithBuffer(buffer) {
-// // 	// TODO: check if buffer has a byteOffset, and if Reader respects it
-// // 	return decodeWithReader(new Reader(buffer))
-// // }

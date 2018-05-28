@@ -8,7 +8,8 @@ Experiments with streaming twirps are happening on the v6_streams_alpha branch.
 
 ## Installation and code generation
 
-	# Install gnarbox fork of protobuf.js (PR pending to upstream repo)
+	# Install gnarbox fork of protobuf.js so auto-routing works
+	# (PR pending to upstream repo: https://github.com/dcodeIO/protobuf.js/pull/1054)
 	yarn add https://github.com/gnarbox/protobuf.js
 
 	# Generate js protobuf file with protobuf.js's pbjs command

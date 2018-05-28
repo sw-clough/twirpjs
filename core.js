@@ -1,5 +1,7 @@
 import { rpc } from 'protobufjs/minimal'
 
+// TODO: Rename generator to factory throughout?
+
 // TwirpJS transports override protobuf.js's implementation of "rpcCall", the original implementation
 // is saved as the transport type 'ORIGINAL' and requires use of the createRpcImpl option
 const ORIGINAL = 'ORIGINAL'
