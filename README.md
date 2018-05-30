@@ -1,8 +1,8 @@
 # TwirpJS | A protobuf.js-based twirp client library
 
-[twirp](https://github.com/twitchtv/twirp) is a protobuf-based RPC transport spec with a great golang implementation. This repo aims to be a worthy javascript client implementation, built with [protobuf.js](https://github.com/dcodeIO/protobuf.js)
+[twirp](https://github.com/twitchtv/twirp) is a protobuf-based RPC transport spec with a great golang implementation. This project is built on the [protobuf.js](https://github.com/dcodeIO/protobuf.js) library and aims to be a worthy javascript twirp client implementation.
 
-See the example directory for usage.
+At the moment it provides two transport APIs: a fetch-based promise interface (the default), and an XHR-based RxJS observable transport. See the example directory for detailed usage.
 
 Experiments with streaming twirps are happening on the v6_streams_alpha branch.
 
@@ -21,13 +21,17 @@ Experiments with streaming twirps are happening on the v6_streams_alpha branch.
 	# Generate twirp file with twirpjs's gen_twirpjs command
 	npx gen_twirpjs <SERVICE> > <SERVICE>.twirp.js
 
-And then import the twirp file to create and use a twirp client:
+## Usage
+
+Once your service's .twirp.js file has been generated, you can import the twirp file to create and use a twirp client. Casing for services, methods, messages, and fields follows spelling in the .proto file.
 
 	import { New<SERVICE>Client } from './<SERVICE>.twirp'
 
 	const client = New<SERVICE>Client('http://<HOST_ADDR>')
 
-	// Call rpc methods on client
+### Using the default fetch-based transport
+
+	// Call rpc method on client
 	try {
 		const req = { <RequestFieldA>: <ValueA>, <RequestFieldB>: <ValueB> }
 		const resp = await client.<MethodName>(req)
@@ -46,16 +50,62 @@ And then import the twirp file to create and use a twirp client:
 		console.error('request failed:', err)
 	}
 
-## A note on naming conventions
+### Using the [RxJS](https://github.com/ReactiveX/rxjs) Observable transport
 
-This repository makes the rather controversial decision to use golang-style naming and formatting, meaning that everything exported by this package is ***TitleCased*** and all .proto-file-based classes, types, and methods keep the same casing as in the source .proto file. Among other things, this makes it easy for twirpjs to generate the correct routes. If you're primarily a javascript developer, this will undoubtably annoy you; for us at GNARBOX though, we've been applying golang conventions across languages wherever we can and have found that it has dramatically disambiguated things and reduced cognitive overhead at language boundaries. Win!
+The observable transport is not automatically loaded. You can use it like this:
+
+	//
+	// Register the transport once when your application loads
+	//
+	import { registerTransportGenerator } from 'twirpjs'
+	import createObservableTransport from 'twirpjs/transports/rxjs_transport'
+	registerTransportGenerator({
+		name: 'OBSERVABLE',
+		setAsDefault: true, // optional
+		generator: createObservableTransport,
+	})
+
+	//
+	// Elsewhere in your app...
+	//
+	import { TRANSPORT_TYPES } from 'twirpjs' // only required if transport was not registered as default
+	import { finalize } from 'rxjs/operators' // or whatever operators you want
+	import { New<SERVICE>Client } from './<SERVICE>.twirp'
+
+	const client = New<SERVICE>Client(
+		'http://<HOST_ADDR>',
+		{ transportType: TRANSPORT_TYPES.RXJS }, // matches "name" field in register call, only required if transport was not registered as default
+	)
+
+	const req = { <RequestFieldA>: <ValueA>, <RequestFieldB>: <ValueB> }
+	const subscription = client.<MethodName>(req)
+		.pipe(
+			// rxjs operators go here, e.g...
+			finalize(() => { console.log('<MethodName> ended, either successfully or due to error') }),
+		)
+		.subscribe(
+			resp => { console.log('response:', resp) },
+			err  => { console.error('error:', err) },
+			()   => { console.log('completed') }
+		)
+
+	// All the usual rxjs goodness applies. E.g. to abort, you can...
+	//   + use rxjs's "takeUntil" and cohorts inside the pipe function
+	//   + call subscription.unsubscribe()
+
+### JavaScript support for streaming responses
+
+For rpc methods with streaming responses, the built-in transports use fetch's `Response.body.getReader` function, which is implemented by some but not all runtimes. See [getReader#Browser_compatibility](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader#Browser_compatibility) for information on which browsers are covered.
+
+React Native's fetch is a wrapper around its own implementation of the XHR spec and does not include support for streaming arrayBuffers, but support can be achieved in iOS with the experimental [react-native-streaming-xhr](https://github.com/gnarbox/react-native-streaming-xhr) repository, which is a fork of RN's Network library that adds an implementation of the now-deprecated `moz-chunked-arraybuffer` responseType and enables twirp streams with the `createObservableXHRTransport` transport generator (via a forked version of RxJS's AjaxObservable). Android support is in the works.
 
 ## TODO
 
-- [x] ~~[transports] Create a default promise transport~~
+- [x] ~~[transports] Create a default fetch-based promise transport~~
+- [x] ~~[transports] Create an RxJS transport~~
 - [x] ~~[example] Create an example react web-app client~~
-- [ ] [README] Add warning about how this repo uses a temporary fork of protobufjs for the new "keep-case-all" pbjs flag
 - [ ] [tests] Get some coverage going
-- [ ] [README] Explain registration and selection of new transport types
+- [ ] [README] Explain transport registration and use of custom transports
+- [ ] [README] Explain options argument of new client function, including 'transportType' and 'fetchOptions' field
 - [ ] [transports] Create a nodejs transport
-- [ ] [transports] Create an RxJS transport?
+- [ ] [typing] Evaluate feasibility of flow and/or TypeScript support

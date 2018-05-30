@@ -2,7 +2,9 @@ RETOOL=$(CURDIR)/_tools/bin/retool -base-dir `pwd`
 PATH := ${PWD}/bin:${PWD}/_tools/bin:${PATH}
 .DEFAULT_GOAL := all
 
-all: setup generate run-server
+all: setup generate
+	# Now you can run the server with "make run-server"
+	# And you can run the server with "make run-go-client"
 
 setup:
 	./install_proto.bash

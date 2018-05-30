@@ -1,6 +1,6 @@
 {
   "name": "twirpjs",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Experimental streaming twirp client built on protobuf.js",
   "main": "index.js",
   "bin": {
@@ -18,7 +18,6 @@
     "rpc",
     "protobuf"
   ],
-  "author": "Mike Lemmon <lemmon@gnarbox.com>",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/gnarbox/twirpjs/issues"
@@ -26,6 +25,9 @@
   "homepage": "https://github.com/gnarbox/twirpjs#readme",
   "dependencies": {
     "protobufjs": "gnarbox/protobuf.js#keep-case-all"
+  },
+  "optionalDependencies": {
+    "rxjs": "^6.1.0"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",

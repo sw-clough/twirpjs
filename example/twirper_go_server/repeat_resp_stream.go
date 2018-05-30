@@ -1,4 +1,5 @@
-// Copyright 2018 MyGnar, Inc.  All Rights Reserved.
+// Original work Copyright 2018 Twitch Interactive, Inc.  All Rights Reserved.
+// Modified work Copyright 2018 MyGnar, Inc.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may not
 // use this file except in compliance with the License. A copy of the License is
@@ -51,8 +52,8 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 
 	var delay <-chan time.Time
 	if rs.req.DelayMs == 0 {
-		dd := make(chan time.Time, 1)
-		dd <- time.Now()
+		dd := make(chan time.Time)
+		close(dd)
 		delay = dd
 	} else {
 		delay = time.After(time.Duration(rs.req.DelayMs) * time.Millisecond)
