@@ -19,7 +19,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -43,7 +42,6 @@ func main() {
 	port := flag.Int(`p`, 8888, `the port on which the server is listening`)
 	host := flag.String(`h`, `http://localhost`, `where to look for the server`)
 	cancelAfter := flag.Int(`cancel`, -1, `after this many messages, cancel the streaming request's context (no cancel if c < 0)`)
-	endAfter := flag.Int(`end`, -1, `after this many messages, call End on the response stream (does nothing if e < 0)`)
 	repetitions := flag.Int(`n`, int(repeatReq.NumRepeats), `number of streaming messages to request from the server`)
 	delayMs := flag.Int(`d`, int(repeatReq.DelayMs), `milliseconds delay between streamed response messages`)
 	errAfter := flag.Int(`err`, int(repeatReq.ErrAfter), `tell the server to return an error after this many streaming messages`)
@@ -59,13 +57,7 @@ func main() {
 		http.DefaultClient,
 	)
 
-	var (
-		echoResp         *twirper.EchoReq
-		err              error
-		repeatRespStream twirper.RepeatRespStream
-	)
-
-	echoResp, err = client.Echo(context.Background(), echoReq)
+	echoResp, err := client.Echo(context.Background(), echoReq)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -73,35 +65,26 @@ func main() {
 
 	// Ask for a stream of hats
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // cancel is indepotent but must be called, so call it on exit no matter what
-	repeatRespStream, err = client.Repeat(ctx, repeatReq)
+	defer cancel() // cancel is idempotent but must be called, so call it on exit no matter what
+	repeatRespStream, err := client.Repeat(ctx, repeatReq)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("\tResponse from Repeat(%+v):\n", repeatReq)
 	var lastID int32 = 0
-	for {
-		if lastID == int32(*endAfter) {
-			// Question: Should End() ever be used by the client?
-			fmt.Println("\t\t<Abruptly ending stream>")
-			repeatRespStream.End(fmt.Errorf(`I'm hanging up`))
-			break // otherwise Next() errors because the request is closed
+	for respOrErr := range repeatRespStream {
+		// repeatResp, err := repeatRespStream.Next(context.Background())
+		if respOrErr.Err != nil {
+			fmt.Printf("\t\t<ERROR:> %+v\n", respOrErr.Err)
+			os.Exit(1)
 		}
+		repeatResp := respOrErr.Msg
+		lastID = repeatResp.ID
+		fmt.Printf("\t\t%+v\n", repeatResp)
 		if lastID == int32(*cancelAfter) {
 			fmt.Println("\t\t<Cancelling request context>")
 			cancel()
-			// Next() will return the error "context canceled"
 		}
-		repeatResp, err := repeatRespStream.Next(context.Background())
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Printf("\t\t<ERROR:> %+v\n", err)
-			os.Exit(1)
-		}
-		lastID = repeatResp.ID
-		fmt.Printf("\t\t%+v\n", repeatResp)
 	}
 	fmt.Printf("\tGoodbye\n")
 }

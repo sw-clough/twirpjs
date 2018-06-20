@@ -40,7 +40,7 @@ type Twirper interface {
 	Echo(ctx context.Context, in *EchoReq) (*EchoReq, error)
 
 	// Repeat returns a stream of repeated messages
-	Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error)
+	Repeat(ctx context.Context, in *RepeatReq) (<-chan RepeatRespOrError, error)
 }
 
 // =======================
@@ -81,7 +81,7 @@ func (c *twirperProtobufClient) Echo(ctx context.Context, in *EchoReq) (*EchoReq
 	return out, err
 }
 
-func (c *twirperProtobufClient) Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error) {
+func (c *twirperProtobufClient) Repeat(ctx context.Context, in *RepeatReq) (<-chan RepeatRespOrError, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "twirper")
 	ctx = ctxsetters.WithServiceName(ctx, "Twirper")
 	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
@@ -109,13 +109,29 @@ func (c *twirperProtobufClient) Repeat(ctx context.Context, in *RepeatReq) (Repe
 		return nil, errorFromResponse(resp)
 	}
 
-	return &protoRepeatRespStreamReader{
-		prs: protoStreamReader{
+	respStream := make(chan RepeatRespOrError)
+	go func() {
+		defer func() {
+			resp.Body.Close()
+			close(respStream)
+		}()
+		reader := protoStreamReader{
 			r:       bufio.NewReader(resp.Body),
-			c:       resp.Body,
 			maxSize: 1 << 21, // 1GB
-		},
-	}, nil
+		}
+		out := new(RepeatResp)
+		for {
+			if err = reader.Read(out); err != nil {
+				if err == io.EOF {
+					return
+				}
+				respStream <- RepeatRespOrError{Err: err}
+				return
+			}
+			respStream <- RepeatRespOrError{Msg: out}
+		}
+	}()
+	return respStream, nil
 }
 
 // ===================
@@ -156,7 +172,7 @@ func (c *twirperJSONClient) Echo(ctx context.Context, in *EchoReq) (*EchoReq, er
 	return out, err
 }
 
-func (c *twirperJSONClient) Repeat(ctx context.Context, in *RepeatReq) (RepeatRespStream, error) {
+func (c *twirperJSONClient) Repeat(ctx context.Context, in *RepeatReq) (<-chan RepeatRespOrError, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "twirper")
 	ctx = ctxsetters.WithServiceName(ctx, "Twirper")
 	ctx = ctxsetters.WithMethodName(ctx, "Repeat")
@@ -184,14 +200,30 @@ func (c *twirperJSONClient) Repeat(ctx context.Context, in *RepeatReq) (RepeatRe
 		return nil, errorFromResponse(resp)
 	}
 
-	jrs, err := newJSONStreamReader(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return &jsonRepeatRespStreamReader{
-		jrs: jrs,
-		c:   resp.Body,
-	}, nil
+	respStream := make(chan RepeatRespOrError)
+	go func() {
+		defer func() {
+			resp.Body.Close()
+			close(respStream)
+		}()
+		reader, err := newJSONStreamReader(resp.Body)
+		if err != nil {
+			respStream <- RepeatRespOrError{Err: err}
+			return
+		}
+		out := new(RepeatResp)
+		for {
+			if err = reader.Read(out); err != nil {
+				if err == io.EOF {
+					return
+				}
+				respStream <- RepeatRespOrError{Err: err}
+				return
+			}
+			respStream <- RepeatRespOrError{Msg: out}
+		}
+	}()
+	return respStream, nil
 }
 
 // ======================
@@ -449,7 +481,7 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 	}
 
 	// Call service method
-	var respContent RepeatRespStream
+	var respContent <-chan RepeatRespOrError
 	respFlusher, canFlush := resp.(http.Flusher)
 	func() {
 		defer func() {
@@ -503,15 +535,24 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 			// Ignored, for the same reason as in the writeError func
 			_ = writeErr
 		}
-		respContent.End(twerr)
 	}
 
 	messages := proto.NewBuffer(nil)
 	for {
-		msg, err := respContent.Next(ctx)
-		if err != nil {
-			writeTrailer(err)
-			break
+		var msg *RepeatResp
+		select {
+		case <-ctx.Done():
+			return
+		case msgOrErr, open := <-respContent:
+			if !open {
+				writeTrailer(io.EOF)
+				return
+			}
+			if msgOrErr.Err != nil {
+				writeTrailer(msgOrErr.Err)
+				return
+			}
+			msg = msgOrErr.Msg
 		}
 
 		messages.Reset()
@@ -520,14 +561,14 @@ func (s *twirperServer) serveRepeatProtobuf(ctx context.Context, resp http.Respo
 		if err != nil {
 			err = wrapErr(err, "failed to marshal proto message")
 			writeTrailer(err)
-			break
+			return
 		}
 
 		_, err = resp.Write(messages.Bytes())
 		if err != nil {
 			err = wrapErr(err, "failed to send proto message")
 			writeTrailer(err) // likely to fail on write, but try anyway to ensure ctx gets error code set for responseSent hook
-			break
+			return
 		}
 
 		if canFlush {
@@ -552,42 +593,10 @@ func (s *twirperServer) ProtocGenTwirpVersion() string {
 	return "v5.3.0"
 }
 
-// RepeatRespStream represents a stream of RepeatResp messages.
-type RepeatRespStream interface {
-	Next(context.Context) (*RepeatResp, error)
-	End(error)
+type RepeatRespOrError struct {
+	Msg *RepeatResp
+	Err error
 }
-
-type protoRepeatRespStreamReader struct {
-	prs protoStreamReader
-}
-
-func (r protoRepeatRespStreamReader) Next(context.Context) (*RepeatResp, error) {
-	out := new(RepeatResp)
-	err := r.prs.Read(out)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r protoRepeatRespStreamReader) End(error) { _ = r.prs.c.Close() }
-
-type jsonRepeatRespStreamReader struct {
-	jrs *jsonStreamReader
-	c   io.Closer
-}
-
-func (r jsonRepeatRespStreamReader) Next(context.Context) (*RepeatResp, error) {
-	out := new(RepeatResp)
-	err := r.jrs.Read(out)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r jsonRepeatRespStreamReader) End(error) { _ = r.c.Close() }
 
 // =====
 // Utils
@@ -1014,9 +1023,7 @@ func callError(ctx context.Context, h *twirp.ServerHooks, err twirp.Error) conte
 }
 
 type protoStreamReader struct {
-	r *bufio.Reader
-	c io.Closer
-
+	r       *bufio.Reader
 	maxSize int
 }
 
@@ -1032,15 +1039,13 @@ func (r protoStreamReader) Read(msg proto.Message) error {
 		trailerTag = (2 << 3) | 2
 	)
 
-	if tag == trailerTag {
-		// This is a trailer (twirp error), read it and then close the client
-		defer r.c.Close()
+	if tag == trailerTag { // Received a json twirp error or "EOF"
 		// Read the length delimiter
 		l, err := binary.ReadUvarint(r.r)
 		if err != nil {
 			return clientError("unable to read trailer's length delimiter", err)
 		}
-		sb := new(strings.Builder)
+		sb := new(bytes.Buffer)
 		sb.Grow(int(l))
 		_, err = io.Copy(sb, r.r)
 		if err != nil {
@@ -1151,11 +1156,11 @@ func (r *jsonStreamReader) Read(msg proto.Message) error {
 	var tj twerrJSON
 	err = r.dec.Decode(&tj)
 	if err != nil {
+		var eof string
+		if _ = r.dec.Decode(&eof); eof == "EOF" {
+			return io.EOF
+		}
 		return err
-	}
-
-	if tj.Code == "stream_complete" {
-		return io.EOF
 	}
 
 	return tj.toTwirpError()

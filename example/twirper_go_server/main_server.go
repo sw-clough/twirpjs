@@ -34,7 +34,7 @@ func invalidArgumentError(argument, validationMsg string) twirp.Error {
 }
 
 var (
-	errSilenceIsAbhorent = invalidArgumentError(`Message`, `I won't be silent`)
+	errMissingMessage = invalidArgumentError(`Message`, `I won't be silent`)
 )
 
 type theTwirper struct{}
@@ -43,23 +43,25 @@ func (tt *theTwirper) Echo(ctx context.Context, req *twirper.EchoReq) (*twirper.
 	fmt.Println()
 	log.Printf("(theTwirper#Echo) Echo called with %#v", req)
 	if req.Message == `` {
-		log.Printf("(theTwirper#Echo) Returning %#v", errSilenceIsAbhorent)
-		return nil, errSilenceIsAbhorent
+		log.Printf("(theTwirper#Echo) Returning %#v", errMissingMessage)
+		return nil, errMissingMessage
 	}
 	log.Printf("(theTwirper#Echo) Returning %#v", req)
 	return req, nil
 }
 
-func (tt *theTwirper) Repeat(ctx context.Context, req *twirper.RepeatReq) (twirper.RepeatRespStream, error) {
+func (tt *theTwirper) Repeat(ctx context.Context, req *twirper.RepeatReq) (<-chan twirper.RepeatRespOrError, error) {
 	fmt.Println()
 	log.Printf("(theTwirper#Repeat) Repeat called with %#v", req)
 	if req.Message == `` {
-		return nil, errSilenceIsAbhorent
+		return nil, errMissingMessage
 	}
 	if req.NumRepeats <= 0 {
-		return nil, errSilenceIsAbhorent
+		return nil, errMissingMessage
 	}
-	return newRepeatRespStream(req), nil
+	respStream := make(chan twirper.RepeatRespOrError)
+	go sendRepeatResps(ctx, req, respStream)
+	return respStream, nil
 }
 
 func main() {

@@ -24,12 +24,12 @@
     "ctxsetters",
     "internal/contextkeys"
   ]
-  revision = "a78922ad75926bebad8cbda37034c16f36069dfa"
+  revision = "fe19e0193b0ef902003c5f441b3b715bc240ad64"
   source = "github.com/gnarbox/twirp"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b712f11ad1c8e90fbe3d2f49635e1c2b32228e11d16455ae2df200ecb28b5bae"
+  inputs-digest = "118ca8c5e8e779efe7691fc41e9670f9847dff9439dfcafd2b964de592f94918"
   solver-name = "gps-cdcl"
   solver-version = 1
