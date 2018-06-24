@@ -351,7 +351,7 @@ if (program.java) {
 						L(`} catch (Exception err) {`)
 							++indent
 							L(`Log.e("${Ss}", "(${mm}) Request is not a valid protobuf", err);`)
-							L(`${moduleClass}.sendError(emitter, rID, new GBXTwirpError("Request is not a valid base64-encoded ${m.requestType} protobuf string: " + err.getMessage(), err));`)
+							L(`${moduleClass}.sendError(emitter, rID, new GBXTwirpError("Request is not a valid base64-encoded ${m.requestType} protobuf string, err));`)
 							L(`return;`)
 							--indent
 						L(`}`)
