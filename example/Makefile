@@ -30,5 +30,3 @@ run-go-client:
 	$(client) -err=5 || true
 	@echo "\n### Cancel the request context after the fifth message"
 	$(client) -cancel=5 || true
-	@echo "\n### Call End() on the response stream after the fifth message"
-	$(client) -end=5 || true

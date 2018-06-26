@@ -14,7 +14,7 @@
     },
     {
       "Repository": "github.com/twitchtv/twirp/protoc-gen-twirp",
-      "Commit": "a78922ad75926bebad8cbda37034c16f36069dfa",
+      "Commit": "fe19e0193b0ef902003c5f441b3b715bc240ad64",
       "Fork": "https://github.com/gnarbox/twirp"
     }
   ],

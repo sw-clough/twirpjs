@@ -27,6 +27,56 @@ import (
 	"github.com/twitchtv/twirp"
 )
 
+func sendRepeatResps(ctx context.Context, req *twirper.RepeatReq, respStream chan twirper.RepeatRespOrError) {
+	defer close(respStream)
+	repeated := int32(0)
+	lastTime := time.Now()
+	for {
+		if req.ErrAfter != 0 && repeated == req.ErrAfter {
+			err := twirp.NewError(twirp.Unknown, `you wanted this error`)
+			err = err.WithMeta(`extra_info`, `goes in meta`)
+			log.Printf("(sendRepeatResps) Client requested an error, returning error %#v", err)
+			respStream <- twirper.RepeatRespOrError{Err: err}
+			return
+		}
+		if repeated == req.NumRepeats {
+			log.Printf("(sendRepeatResps) Closing stream")
+			return
+		}
+		repeated++
+
+		var delay <-chan time.Time
+		if req.DelayMs == 0 {
+			dd := make(chan time.Time)
+			close(dd)
+			delay = dd
+		} else {
+			delay = time.After(time.Duration(req.DelayMs) * time.Millisecond)
+		}
+
+		select {
+		case <-ctx.Done():
+			err := errAborted(ctx.Err())
+			log.Printf(
+				`(sendRepeatResps) Context canceled, returning error "%+v"`+
+					" (Note: this error goes nowhere because the connection is closed)\n",
+				err,
+			)
+			respStream <- twirper.RepeatRespOrError{Err: err}
+
+		case <-delay:
+			resp := &twirper.RepeatResp{
+				Message:   req.Message,
+				DelayedMs: time.Since(lastTime).Nanoseconds() / 1000000,
+				ID:        repeated,
+			}
+			lastTime = time.Now()
+			log.Printf("(sendRepeatResps) Sending %#v", *resp)
+			respStream <- twirper.RepeatRespOrError{Msg: resp}
+		}
+	}
+}
+
 type repeatRespStream struct {
 	req      *twirper.RepeatReq
 	lastTime time.Time
@@ -41,11 +91,11 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 	if rs.req.ErrAfter != 0 && rs.repeated == rs.req.ErrAfter {
 		err := twirp.NewError(twirp.Unknown, `you wanted this error`)
 		err = err.WithMeta(`extra_info`, `goes in meta`)
-		log.Printf("(repeatRespStream#Next) Client requested an error, returning error %#v", err)
+		log.Printf("(sendRepeatResps) Client requested an error, returning error %#v", err)
 		return nil, err
 	}
 	if rs.repeated == rs.req.NumRepeats {
-		log.Printf("(repeatRespStream#Next) Returning %#v", io.EOF)
+		log.Printf("(sendRepeatResps) Returning %#v", io.EOF)
 		return nil, io.EOF
 	}
 	rs.repeated++
@@ -63,7 +113,7 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 	case <-ctx.Done():
 		err := errAborted(ctx.Err())
 		log.Printf(
-			`(repeatRespStream#Next) Context canceled, returning error "%+v"`+
+			`(sendRepeatResps) Context canceled, returning error "%+v"`+
 				" (Note: this error goes nowhere because the connection is closed)\n",
 			err,
 		)
@@ -78,7 +128,7 @@ func (rs *repeatRespStream) Next(ctx context.Context) (*twirper.RepeatResp, erro
 			ID:        rs.repeated,
 		}
 		rs.lastTime = time.Now()
-		log.Printf("(repeatRespStream#Next) Returning %#v", *resp)
+		log.Printf("(sendRepeatResps) Returning %#v", *resp)
 		return resp, nil
 	}
 }

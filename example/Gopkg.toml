@@ -6,4 +6,4 @@
 [[constraint]]
   name = "github.com/twitchtv/twirp"
   source = "github.com/gnarbox/twirp"
-  revision = "a78922ad75926bebad8cbda37034c16f36069dfa"
+  revision = "fe19e0193b0ef902003c5f441b3b715bc240ad64"
