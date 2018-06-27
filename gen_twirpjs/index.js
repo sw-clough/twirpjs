@@ -122,6 +122,8 @@ const mkdirpSync = dirPath => {
 	}
 }
 
+// const
+
 const L = codeLine
 const C = codeComment
 const generatedBy = () => {
@@ -133,6 +135,38 @@ const generatedBy = () => {
  * Begin code generation
  */
 if (program.java) {
+	const getImports = (n, s) => {
+		const nn = n.name
+		const ss = s.name
+		// Find imported protos
+		const imports = {
+			typeMap: {},
+			pkgMap: {},
+		}
+		for (const mm in s.methods) {
+			const m = s.methods[mm]
+			for (const rr of [m.requestType, m.responseType]) {
+				let pkgMatch = rr.match(/^.*\./)
+				if (!pkgMatch || !pkgMatch.length || !pkgMatch[0].length) {
+					imports.typeMap[rr] = rr
+					continue
+				}
+				const otherPkgName = pkgMatch[0].substr(0, pkgMatch[0].length -1)
+				const otherPkg = root.nested[otherPkgName]
+				if (!otherPkg || !otherPkg.options) {
+					throw new Error(`${nn}.${ss}.${mm} uses ${rr} but ${otherPkgName} package cannot be found`)
+				}
+				const { java_package: otherPkgRoot, java_outer_classname: otherPkgClass } = otherPkg.options
+				const otherRrClass = rr.substring(pkgMatch[0].length)
+				imports.typeMap[rr] = `${otherPkgClass}.${otherRrClass}`
+				if (!imports.pkgMap[otherPkgName]) {
+					imports.pkgMap[otherPkgName] = `import ${otherPkgRoot}.${otherPkgClass};`
+				}
+			}
+		}
+		return imports
+	}
+
 	//
 	// Generate Java client
 	//
@@ -146,13 +180,16 @@ if (program.java) {
 		const { java_package: pkg, java_outer_classname: protoClass } = n.options
 		const pkgDir = `${program.java}/${pkg.replace(/\./g, '/')}`
 		if (!fs.existsSync(pkgDir)) {
-			console.log(`Creating ${pkgDir}...`)
 			mkdirpSync(pkgDir)
-			console.log(`${pkgDir} exists? `, fs.existsSync(pkgDir))
+			if (!fs.existsSync(pkgDir)) {
+				throw new Error(`Failed to create ${pkgDir}`)
+			}
+			console.log(`Created ${pkgDir}`)
 		}
 		const nn = n.name
 		for (const s of n.nestedArray) {
 			if (!(s instanceof Service)) { continue }
+			const imports = getImports(n, s)
 			generatedBy()
 			L(``)
 			L(`package ${pkg};`)
@@ -163,6 +200,9 @@ if (program.java) {
 			L(`import com.gnarbox.twirp.GBXTwirp;`)
 			L(`import com.gnarbox.twirp.GBXTwirpError;`)
 			L(`import ${pkg}.${protoClass}.*;`)
+			for (const pkgName in imports.pkgMap) {
+				L(imports.pkgMap[pkgName])
+			}
 			L(``)
 
 			const ss = s.name
@@ -186,7 +226,9 @@ if (program.java) {
 				for (const mm in s.methods) {
 					const m = s.methods[mm]
 					const isStreaming = !!m.responseStream
-					L(`public Flowable<${m.responseType}> ${mm}(${m.requestType} req) {`)
+					const reqType = imports.typeMap[m.requestType]
+					const respType = imports.typeMap[m.responseType]
+					L(`public Flowable<${respType}> ${mm}(${reqType} req) {`)
 						++indent
 						L(`final String url = this.url + "/${mm}";`)
 						L(`return GBXTwirp.twirp(url, req, ${isStreaming})`)
@@ -196,12 +238,12 @@ if (program.java) {
 								++indent
 								L(`try {`)
 									++indent
-									L(`${m.responseType} resp = ${m.responseType}.parseFrom(msgBytes);`)
+									L(`${respType} resp = ${respType}.parseFrom(msgBytes);`)
 									L(`return resp;`)
 									--indent
 								L(`} catch (InvalidProtocolBufferException err) {`)
 									++indent
-									L(`throw new GBXTwirpError("Failed to decode ${m.responseType}", err);`)
+									L(`throw new GBXTwirpError("Failed to decode ${respType}", err);`)
 									--indent
 								L(`}`)
 								--indent
@@ -293,6 +335,9 @@ if (program.java) {
 			L(`import com.gnarbox.twirp.GBXTwirp;`)
 			L(`import com.gnarbox.twirp.GBXTwirpError;`)
 			L(`import com.gnarbox.api.${protoClass}.*;`)
+			for (const pkgName in imports.pkgMap) {
+				L(imports.pkgMap[pkgName])
+			}
 			L(``)
 			L(`public class ${moduleClass} extends ReactContextBaseJavaModule {`)
 				++indent
@@ -338,6 +383,8 @@ if (program.java) {
 				for (const mm in s.methods) {
 					const m = s.methods[mm]
 					const isStreaming = !!m.responseStream
+					const reqType = imports.typeMap[m.requestType]
+					const respType = imports.typeMap[m.responseType]
 					L(`@SuppressLint("CheckResult")`)
 					L(`@ReactMethod`)
 					L(`public void ${mm}(String url, String reqBase64, Promise promise) {`)
@@ -346,15 +393,15 @@ if (program.java) {
 						L(`promise.resolve(rID);`)
 						L(`final String _url = url + "${svcRoute}/${mm}";`)
 						L(`final RCTDeviceEventEmitter emitter = this.reactContext.getJSModule(RCTDeviceEventEmitter.class);`)
-						L(`final ${m.requestType} req;`)
+						L(`final ${reqType} req;`)
 						L(`try {`)
 							++indent
-							L(`req = ${m.requestType}.parseFrom(Base64.decode(reqBase64, Base64.DEFAULT));`)
+							L(`req = ${reqType}.parseFrom(Base64.decode(reqBase64, Base64.DEFAULT));`)
 							--indent
 						L(`} catch (Exception err) {`)
 							++indent
 							L(`Log.e("${ss}", "(${mm}) Request is not a valid protobuf", err);`)
-							L(`${moduleClass}.sendError(emitter, rID, new GBXTwirpError("Request is not a valid base64-encoded ${m.requestType} protobuf string", err));`)
+							L(`${moduleClass}.sendError(emitter, rID, new GBXTwirpError("Request is not a valid base64-encoded ${reqType} protobuf string", err));`)
 							L(`return;`)
 							--indent
 						L(`}`)
