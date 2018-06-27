@@ -1,6 +1,6 @@
 {
 	"name": "twirpjs",
-	"version": "0.0.5",
+	"version": "0.0.6",
 	"description": "Experimental streaming twirp client built on protobuf.js",
 	"main": "index.js",
 	"bin": {
