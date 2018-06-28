@@ -76,7 +76,7 @@ program
 	.usage('[-j] [-r] <protofile ...>')
 	.option('-j, --java [src_dir]', 'Generate code for java client')
 	.option('-r, --react_native', 'Generate code for react-native android module')
-	// .option('-s, --swift', 'Generate code for swift client')
+	.option('-s, --swift [dest_dir]', 'Generate code for swift client')
 	.arguments('<protofiles...>')
 	.action(protofiles => { protos = protofiles })
 	.parse(process.argv)
@@ -134,6 +134,91 @@ const generatedBy = () => {
 /**
  * Begin code generation
  */
+if (program.swift) {
+	if (!fs.existsSync(program.swift)) {
+		mkdirpSync(program.swift)
+		if (!fs.existsSync(program.swift)) {
+			throw new Error(`Failed to create ${program.swift}`)
+		}
+		console.log(`Created ${program.swift}`)
+	}
+
+	for (const n of root.nestedArray) {
+		const nn = n.name
+		for (const s of n.nestedArray) {
+			if (!(s instanceof Service)) { continue }
+			generatedBy()
+			L(``)
+			L(`import Foundation`)
+			L(`import RxSwift`)
+			L(`import SwiftProtobuf`)
+			L(``)
+
+			const Nn = nn.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of namespace
+			const ss = s.name
+			const Ss = ss.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of service name
+			const svcRoute = `/twirp/${nn}.${ss}`
+			const clientClass = `${Ss}Client`
+			C([ `${clientClass} implements a twirp client for ${nn}.${ss}` ])
+			L(`public class ${clientClass}: NSObject {`)
+				++indent
+				L(`public static let protoNamespace = "${nn}"`)
+				L(`public static let protoService = "${ss}"`)
+				L(`private let url: String`)
+				L(``)
+				L(`public init(url: String) {`)
+					++indent
+					L(`self.url = url + "${svcRoute}"`)
+					L(`super.init()`)
+					--indent
+				L(`}`)
+				L(``)
+
+				for (const mm in s.methods) {
+					const m = s.methods[mm]
+					const isRespStreaming = !!m.responseStream
+					let reqType = `${Nn}_${m.requestType}`
+					let respType = `${Nn}_${m.responseType}`
+					if (m.requestType.match(/\./)) {
+						reqType = m.requestType
+							.replace(/^\w/, c => c.toUpperCase())
+							.replace(/\./, '_')
+					}
+					if (m.responseType.match(/\./)) {
+						respType = m.responseType
+							.replace(/^\w/, c => c.toUpperCase())
+							.replace(/\./, '_')
+					}
+					L(`func ${mm}(_ req: ${reqType}) -> Observable<${respType}> {`)
+						++indent
+						L(`let url = self.url + "/${mm}";`)
+						L(`let ioSched = SerialDispatchQueueScheduler(qos: .background)`)
+						L(`return GBXTwirp().twirp(url: url, reqMsg: req, isRespStreaming: ${isRespStreaming})`)
+							++indent
+							L(`.subscribeOn(ioSched)`)
+							L(`.decodeMessage(${respType}.self)`)
+							--indent
+						--indent
+					L(`}`)
+					L(``)
+				} // end methods
+				--indent
+			L(`} // end class ${clientClass}`)
+			L(``)
+			const svcFile = `${program.swift}/${clientClass}.swift`
+			fs.writeFileSync(svcFile, out.join("\n"), err => { throw err })
+			out = []
+			console.log(`Wrote ${svcFile}`)
+
+			if (!program.react_native) {
+				continue
+			}
+
+		} // end foreach service
+	} // end foreach namespace
+	// return
+}
+
 if (program.java) {
 	const getImports = (n, s) => {
 		const nn = n.name
@@ -225,13 +310,13 @@ if (program.java) {
 
 				for (const mm in s.methods) {
 					const m = s.methods[mm]
-					const isStreaming = !!m.responseStream
+					const isRespStreaming = !!m.responseStream
 					const reqType = imports.typeMap[m.requestType]
 					const respType = imports.typeMap[m.responseType]
 					L(`public Flowable<${respType}> ${mm}(${reqType} req) {`)
 						++indent
 						L(`final String url = this.url + "/${mm}";`)
-						L(`return GBXTwirp.twirp(url, req, ${isStreaming})`)
+						L(`return GBXTwirp.twirp(url, req, ${isRespStreaming})`)
 							++indent
 							L(`.subscribeOn(Schedulers.io())`)
 							L(`.map(msgBytes -> {`)
@@ -341,7 +426,6 @@ if (program.java) {
 			L(``)
 			L(`public class ${moduleClass} extends ReactContextBaseJavaModule {`)
 				++indent
-				L(`private static final String E_INVALID_REQUEST = "E_INVALID_REQUEST";`)
 				L(`private static int reqID = 0;`)
 				L(`private final ReactApplicationContext reactContext;`)
 				L(``)
@@ -382,7 +466,7 @@ if (program.java) {
 
 				for (const mm in s.methods) {
 					const m = s.methods[mm]
-					const isStreaming = !!m.responseStream
+					const isRespStreaming = !!m.responseStream
 					const reqType = imports.typeMap[m.requestType]
 					const respType = imports.typeMap[m.responseType]
 					L(`@SuppressLint("CheckResult")`)
@@ -405,7 +489,7 @@ if (program.java) {
 							L(`return;`)
 							--indent
 						L(`}`)
-						L(`GBXTwirp.twirp(_url, req, ${isStreaming})`)
+						L(`GBXTwirp.twirp(_url, req, ${isRespStreaming})`)
 							++indent
 							L(`.subscribeOn(Schedulers.io())`)
 							L(`.subscribe(`)
@@ -492,7 +576,7 @@ for (const n of root.nestedArray) {
 			L(``)
 			for (const mm in s.methods) {
 				const m = s.methods[mm]
-				const isStreaming = !!m.responseStream
+				const isRespStreaming = !!m.responseStream
 				L(`${mm} = reqObj => new TwirpObservable({`)
 					++indent
 					L(`hostURL: this.url,`)
