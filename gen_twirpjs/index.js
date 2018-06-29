@@ -230,7 +230,7 @@ if (program.swift) {
 			L(`@objc(${mgmtClassSwift})`)
 			L(`class ${mgmtClassSwift}: RNEventEmitter {`)
 				++indent
-				L(`private var reqID = 0`)
+				L(`private static var reqID = 0`)
 				L(`private var subs: [String: Disposable] = [:]`)
 				L(``)
 				L(`override init() {`)
@@ -276,13 +276,13 @@ if (program.swift) {
 						--indent
 					L(`) -> Void {`)
 						++indent
-						L(`self.reqID += 1`)
+						L(`${mgmtClassSwift}.reqID += 1`)
 						L(`let eventName = "${pkg}.${nn}.${ss}.${mm}"`)
-						L(`let rID = "\\(eventName).\\(self.reqID)"`)
-						L(`let eventID: [String: Any] = [`)
+						L(`let rID = "\\(eventName).\\(${mgmtClassSwift}.reqID)"`)
+						L(`let taskID: [String: Any] = [`)
 							++indent
 							L(`"eventName": eventName,`)
-							L(`"id": self.reqID,`)
+							L(`"id": ${mgmtClassSwift}.reqID,`)
 							--indent
 						L(`]`)
 						L(`let url = url + "/twirp/${nn}.${ss}/${mm}"`)
@@ -290,7 +290,7 @@ if (program.swift) {
 						L(`do {`)
 							++indent
 							L(`reqMsg = try ${reqType}(serializedData: Data(base64Encoded: reqBase64)!)`)
-							L(`resolve(eventID)`)
+							L(`resolve(taskID) // TODO: Resolve earlier (never reject)`)
 							--indent
 						L(`} catch let err {`)
 							++indent
@@ -305,7 +305,7 @@ if (program.swift) {
 							L(`.subscribeOn(ioSched)`)
 							L(`.subscribe { event in`)
 								++indent
-								L(`var resp: [String: Any] = ["id": self.reqID]`)
+								L(`var resp: [String: Any] = ["id": ${mgmtClassSwift}.reqID]`)
 								L(`switch event {`)
 								L(`case .next(let msgBytes):`)
 									++indent
@@ -481,10 +481,12 @@ if (program.java) {
 			}
 			L(``)
 
+			const Nn = nn.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of namespace
 			const ss = s.name
 			const Ss = ss.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of service name
 			const svcRoute = `/twirp/${nn}.${ss}`
 			const clientClass = `${Ss}Client`
+			const rnModuleName = `${Nn}_${Ss}Manager`
 			C([ `${clientClass} implements a twirp client for ${nn}.${ss}` ])
 			L(`public class ${clientClass} {`)
 				++indent
@@ -629,10 +631,11 @@ if (program.java) {
 				L(`}`)
 				L(``)
 				L(`@Override`)
-				L(`public String getName() { return "${pkg}.${Ss}"; }`)
+				L(`public String getName() { return "${rnModuleName}"; }`)
 				L(``)
-				L(`private static void sendError(RCTDeviceEventEmitter emitter, String requestID, Throwable err) {`)
+				L(`private static void sendError(RCTDeviceEventEmitter emitter, String eventName, int id, Throwable err) {`)
 				L(`	WritableMap resp = Arguments.createMap();`)
+				L(`	resp.putInt("id", id);`)
 				L(`	WritableMap ee = Arguments.createMap();`)
 				L(`	WritableMap meta = Arguments.createMap();`)
 				L(`	if (err instanceof GBXTwirpError) {`)
@@ -651,7 +654,7 @@ if (program.java) {
 				L(`	}`)
 				L(`	ee.putMap("meta", meta);`)
 				L(`	resp.putMap("error", ee);`)
-				L(`	emitter.emit(requestID, resp);`)
+				L(`	emitter.emit(eventName, resp);`)
 				L(`}`)
 				L(``)
 
@@ -664,8 +667,14 @@ if (program.java) {
 					L(`@ReactMethod`)
 					L(`public void ${mm}(String url, String reqBase64, Promise promise) {`)
 						++indent
-						L(`String rID = "${pkg}.${ss}.${mm}."+(++${moduleClass}.reqID);`)
-						L(`promise.resolve(rID);`)
+						L(`// let the js client know which events to listen for`)
+						L(`final String eventName = "${pkg}.${nn}.${ss}.${mm}";`)
+						L(`final int reqID = ++${moduleClass}.reqID;`)
+						L(`WritableMap taskID = Arguments.createMap();`)
+						L(`taskID.putString("eventName", eventName);`)
+						L(`taskID.putInt("id", reqID);`)
+						L(`promise.resolve(taskID);`)
+						L(``)
 						L(`final String _url = url + "${svcRoute}/${mm}";`)
 						L(`final RCTDeviceEventEmitter emitter = this.reactContext.getJSModule(RCTDeviceEventEmitter.class);`)
 						L(`final ${reqType} req;`)
@@ -676,7 +685,7 @@ if (program.java) {
 						L(`} catch (Exception err) {`)
 							++indent
 							L(`Log.e("${ss}", "(${mm}) Request is not a valid protobuf", err);`)
-							L(`${moduleClass}.sendError(emitter, rID, new GBXTwirpError("Request is not a valid base64-encoded ${reqType} protobuf string", err));`)
+							L(`${moduleClass}.sendError(emitter, eventName, reqID, new GBXTwirpError("Request is not a valid base64-encoded ${reqType} protobuf string", err));`)
 							L(`return;`)
 							--indent
 						L(`}`)
@@ -689,25 +698,27 @@ if (program.java) {
 									++indent
 									// L(`Log.i("${ss}", "(${mm}) Received bytes: " + msgBytes.length);`)
 									L(`WritableMap resp = Arguments.createMap();`)
+									L(`resp.putInt("id", reqID);`)
 									L(`WritableMap next = Arguments.createMap();`)
 									L(`next.putInt("sizeBytes", msgBytes.length);`)
 									L(`next.putString("dataBase64", Base64.encodeToString(msgBytes, Base64.NO_WRAP));`)
 									L(`resp.putMap("next", next);`)
-									L(`emitter.emit(rID, resp);`)
+									L(`emitter.emit(eventName, resp);`)
 									--indent
 								L(`},`)
 								L(`err -> {`)
 									++indent
-									L(`Log.e("${ss}", "(${mm}) Received error", err);`)
-									L(`${moduleClass}.sendError(emitter, rID, err);`)
+									L(`Log.w("${ss}", "Received an error from ${mm}", err);`)
+									L(`${moduleClass}.sendError(emitter, eventName, reqID, err);`)
 									--indent
 								L(`},`)
 								L(`() -> {`)
 									++indent
 									// L(`Log.i("${ss}", "(${mm}) Completed");`)
 									L(`WritableMap resp = Arguments.createMap();`)
+									L(`resp.putInt("id", reqID);`)
 									L(`resp.putBoolean("completed", true);`)
-									L(`emitter.emit(rID, resp);`)
+									L(`emitter.emit(eventName, resp);`)
 									--indent
 								L(`}`)
 								--indent
@@ -748,9 +759,9 @@ for (const n of root.nestedArray) {
 		const Nn = nn.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of namespace
 		const ss = s.name
 		const Ss = ss.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of service name for new client func
-		const mgmtClassSwift = `${Nn}_${Ss}Manager`
+		const rnModuleName = `${Nn}_${Ss}Manager`
 		const nativeClient = `native${Ss}Client`
-		L(`const ${nativeClient} = Platform.Android ? NativeModules['${pkg}.${ss}'] : NativeModules['${mgmtClassSwift}']`)
+		L(`const ${nativeClient} = NativeModules['${rnModuleName}']`)
 	}
 }
 // Create a new-client function for each service
