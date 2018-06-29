@@ -205,7 +205,7 @@ if (program.swift) {
 				--indent
 			L(`} // end class ${clientClass}`)
 			L(``)
-			const svcFile = `${program.swift}/${clientClass}.swift`
+			let svcFile = `${program.swift}/${clientClass}.swift`
 			fs.writeFileSync(svcFile, out.join("\n"), err => { throw err })
 			out = []
 			console.log(`Wrote ${svcFile}`)
@@ -214,10 +214,201 @@ if (program.swift) {
 				continue
 			}
 
+			//
+			// iOS react native module
+			//
+			// <Namespace>_<Service>Manager.swift
+			//
+			generatedBy()
+			L(``)
+			L(`import Foundation`)
+			L(`import RxSwift`)
+			L(``)
+			const { java_package: pkg, java_outer_classname: protoClass } = n.options
+			const mgmtClassSwift = `${Nn}_${Ss}Manager`
+			C([ `${mgmtClassSwift} implements an RN twirp module for ${nn}.${ss}` ])
+			L(`@objc(${mgmtClassSwift})`)
+			L(`class ${mgmtClassSwift}: RNEventEmitter {`)
+				++indent
+				L(`private var reqID = 0`)
+				L(`private var subs: [String: Disposable] = [:]`)
+				L(``)
+				L(`override init() {`)
+					++indent
+					L(`super.init()`)
+					L(`EventEmitter.sharedInstance.registerEventEmitter(eventEmitter: self)`)
+					--indent
+				L(`}`)
+				L(``)
+				L(`@objc open override func supportedEvents() -> [String] {`)
+					++indent
+					L(`return [`)
+						++indent
+						for (const mm in s.methods) {
+							L(`"${pkg}.${nn}.${ss}.${mm}",`)
+						}
+						--indent
+					L(`]`)
+					--indent
+				L(`}`)
+
+				for (const mm in s.methods) {
+					const m = s.methods[mm]
+					const isRespStreaming = !!m.responseStream
+					let reqType = `${Nn}_${m.requestType}`
+					let respType = `${Nn}_${m.responseType}`
+					if (m.requestType.match(/\./)) {
+						reqType = m.requestType
+							.replace(/^\w/, c => c.toUpperCase())
+							.replace(/\./, '_')
+					}
+					if (m.responseType.match(/\./)) {
+						respType = m.responseType
+							.replace(/^\w/, c => c.toUpperCase())
+							.replace(/\./, '_')
+					}
+					L(`@objc func ${mm}(`)
+						++indent
+						L(`_ url: String,`)
+						L(`withReqBase64 reqBase64: String,`)
+						L(`resolver resolve: RCTPromiseResolveBlock,`)
+						L(`rejecter reject: RCTPromiseRejectBlock`)
+						--indent
+					L(`) -> Void {`)
+						++indent
+						L(`self.reqID += 1`)
+						L(`let eventName = "${pkg}.${nn}.${ss}.${mm}"`)
+						L(`let rID = "\\(eventName).\\(self.reqID)"`)
+						L(`let eventID: [String: Any] = [`)
+							++indent
+							L(`"eventName": eventName,`)
+							L(`"id": self.reqID,`)
+							--indent
+						L(`]`)
+						L(`let url = url + "/twirp/${nn}.${ss}/${mm}"`)
+						L(`let reqMsg: ${reqType}`)
+						L(`do {`)
+							++indent
+							L(`reqMsg = try ${reqType}(serializedData: Data(base64Encoded: reqBase64)!)`)
+							L(`resolve(eventID)`)
+							--indent
+						L(`} catch let err {`)
+							++indent
+							L(`reject("Malformed request", "Not a valid base64-encoded ${reqType}", err)`)
+							L(`return`)
+							--indent
+						L(`}`)
+						L(``)
+						L(`let ioSched = SerialDispatchQueueScheduler(qos: .background)`)
+						L(`let sub = GBXTwirp().twirp(url: url, reqMsg: reqMsg, isRespStreaming: ${!!m.responseStream})`)
+							++indent
+							L(`.subscribeOn(ioSched)`)
+							L(`.subscribe { event in`)
+								++indent
+								L(`var resp: [String: Any] = ["id": self.reqID]`)
+								L(`switch event {`)
+								L(`case .next(let msgBytes):`)
+									++indent
+									L(`let next: [String: Any] = [`)
+										++indent
+										L(`"sizeBytes": msgBytes.count,`)
+										L(`"dataBase64": msgBytes.base64EncodedString(),`)
+										--indent
+									L(`]`)
+									L(`resp["next"] = next`)
+									L(`self.sendEvent(withName: eventName, body: resp)`)
+									--indent
+								L(`case .error(let err as NSError):`)
+									++indent
+									L(`// TODO: Get GBXTwirpError going`)
+									L(`let ui = err.userInfo`)
+									L(`let msg = err.localizedDescription`)
+									L(`let errMap: [String: Any] = [`)
+										++indent
+										L(`"msg": msg,`)
+										L(`"code": ui["code"] == nil ? "internal" : ui["code"]!,`)
+										L(`"meta": ui["meta"] == nil ? ["cause": "unknown"] : ui["meta"]!,`)
+										--indent
+									L(`]`)
+									L(`resp["error"] = errMap`)
+									L(`self.sendEvent(withName: eventName, body: resp)`)
+									--indent
+								L(`case .completed:`)
+									++indent
+									L(`//print(TAG, rID, "**** COMPLETED")`)
+									L(`resp["completed"] = true`)
+									L(`self.sendEvent(withName: eventName, body: resp)`)
+									--indent
+								L(`}`)
+								--indent
+							L(`} // end .subscribe`)
+							--indent
+						L(`self.subs[rID] = sub`)
+						--indent
+					L(`} // end ${ss}.${mm}`)
+					L(``)
+					L(`@objc func Abort${mm}(`)
+						++indent
+						L(`_ reqID: Int,`)
+						L(`resolver resolve: RCTPromiseResolveBlock,`)
+						L(`rejecter reject: RCTPromiseRejectBlock`)
+						--indent
+					L(`) -> Void {`)
+						++indent
+						L(`let eventName = "${pkg}.${nn}.${ss}.${mm}"`)
+						L(`let rID = "\\(eventName).\\(reqID)"`)
+						L(`if let sub = self.subs.removeValue(forKey: rID) {`)
+							++indent
+							L(`sub.dispose()`)
+							L(`resolve(nil)`)
+							L(`return`)
+							--indent
+						L(`}`)
+						L(`// print("GBX:AbortCopy", "ERROR", "Unable to abort, subscription #\\(reqID) not found")`)
+						L(`reject(`)
+							++indent
+							L(`"Unable to abort, subscription not found",`)
+							L(`"No subscription exists for \\(rID)",`)
+							L(`NSError(domain: eventName, code: -444, userInfo: [NSLocalizedDescriptionKey: "Unable to abort, subscription #\\(reqID) not found"])`)
+							--indent
+						L(`)`)
+						--indent
+					L(`} // end ${ss}.Abort${mm}`)
+					L(``)
+				} // end foreach rpc method
+				--indent
+			L(`} // end class ${mgmtClassSwift}`)
+			L(``)
+			svcFile = `${program.swift}/${mgmtClassSwift}.swift`
+			fs.writeFileSync(svcFile, out.join("\n"), err => { throw err })
+			out = []
+			console.log(`Wrote ${svcFile}`)
+
+			//
+			// <Namespace>_<Service>Manager.m
+			//
+			generatedBy()
+			L(``)
+			L(`#import <Foundation/Foundation.h>`)
+			L(`#import <React/RCTBridgeModule.h>`)
+			L(`#import <React/RCTEventEmitter.h>`)
+			L(``)
+			L(`@interface RCT_EXTERN_MODULE(${mgmtClassSwift}, RCTEventEmitter)`)
+			L(``)
+			for (const mm in s.methods) {
+				L(`RCT_EXTERN_METHOD(${mm}:(NSString)url withReqBase64:(NSString)reqBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)`)
+				L(`RCT_EXTERN_METHOD(Abort${mm}:(int)reqID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)`)
+			}
+			L(``)
+			L(`@end`)
+			svcFile = `${program.swift}/${mgmtClassSwift}.m`
+			fs.writeFileSync(svcFile, out.join("\n"), err => { throw err })
+			out = []
+			console.log(`Wrote ${svcFile}`)
+
 		} // end foreach service
 	} // end foreach namespace
-	// return
-}
+} // end if swift
 
 if (program.java) {
 	const getImports = (n, s) => {
@@ -544,7 +735,7 @@ if (program.java) {
 // Generate JS client
 //
 generatedBy()
-L(`import { NativeModules } from 'react-native'`)
+L(`import { NativeModules, Platform } from 'react-native'`)
 L(`import TwirpObservable from 'react-native-twirp'`)
 // Import js proto definition and native client implementation
 for (const n of root.nestedArray) {
@@ -554,10 +745,12 @@ for (const n of root.nestedArray) {
 	const { java_package: pkg } = n.options
 	for (const s of n.nestedArray) {
 		if (!(s instanceof Service)) { continue }
+		const Nn = nn.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of namespace
 		const ss = s.name
 		const Ss = ss.replace(/^\w/, c => c.toUpperCase()) // uppercase first letter of service name for new client func
+		const mgmtClassSwift = `${Nn}_${Ss}Manager`
 		const nativeClient = `native${Ss}Client`
-		L(`const ${nativeClient} = NativeModules['${pkg}.${ss}']`)
+		L(`const ${nativeClient} = Platform.Android ? NativeModules['${pkg}.${ss}'] : NativeModules['${mgmtClassSwift}']`)
 	}
 }
 // Create a new-client function for each service
