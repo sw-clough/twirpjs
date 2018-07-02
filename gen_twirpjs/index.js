@@ -228,17 +228,10 @@ if (program.swift) {
 			const mgmtClassSwift = `${Nn}_${Ss}Manager`
 			C([ `${mgmtClassSwift} implements an RN twirp module for ${nn}.${ss}` ])
 			L(`@objc(${mgmtClassSwift})`)
-			L(`class ${mgmtClassSwift}: RNEventEmitter {`)
+			L(`class ${mgmtClassSwift}: RCTEventEmitter {`)
 				++indent
 				L(`private static var reqID = 0`)
 				L(`private var subs: [String: Disposable] = [:]`)
-				L(``)
-				L(`override init() {`)
-					++indent
-					L(`super.init()`)
-					L(`EventEmitter.sharedInstance.registerEventEmitter(eventEmitter: self)`)
-					--indent
-				L(`}`)
 				L(``)
 				L(`@objc open override func supportedEvents() -> [String] {`)
 					++indent
@@ -364,7 +357,7 @@ if (program.swift) {
 							L(`return`)
 							--indent
 						L(`}`)
-						L(`// print("GBX:AbortCopy", "ERROR", "Unable to abort, subscription #\\(reqID) not found")`)
+						L(`// print("GBX:Abort${mm}", "ERROR", "Unable to abort ${mm}, subscription #\\(reqID) not found")`)
 						L(`reject(`)
 							++indent
 							L(`"Unable to abort, subscription not found",`)
