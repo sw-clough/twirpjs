@@ -24,7 +24,7 @@
 	},
 	"homepage": "https://github.com/gnarbox/twirpjs#readme",
 	"dependencies": {
-		"protobufjs": "https://github.com/gnarbox/protobuf.js#keep-case-all"
+		"protobufjs": "https://github.com/gnarbox/protobuf.js#b98a15b468a19ba894459bbd7f14361a5947b793"
 	},
 	"optionalDependencies": {
 		"rxjs": "^6.1.0"
