@@ -43,7 +43,9 @@ export default function createFetchTransport(twirpURL, options = {}) {
 		const req = requestCtor.encode(request).finish()
 		const resp = await sendReqAndCheckResp(twirpURL, method, req, fetchOptions)
 
-		if (!streamingRespMethods.includes(method.name)) { // unary response
+		// Check for a streaming endpoint
+		if (!streamingRespMethods || !streamingRespMethods.includes(method.name)) {
+			// This is a unary response
 			const buf = await resp.arrayBuffer()
 			const respContent = responseCtor.decode(new Uint8Array(buf))
 			return respContent
