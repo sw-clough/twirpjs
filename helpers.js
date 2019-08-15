@@ -52,14 +52,13 @@ export class TwirpError extends Error {
 		const { msg, message } = twerrObj
 		if (!msg && !message) {
 			super(`Badly formed twirp error: must have msg or message field, got "${JSON.stringify(twerrObj)}"`)
-			return
-		}
-		if (msg && message) {
+		} else if (msg && message) {
 			super(`Badly formed twirp error: cannot have both msg and message fields, got msg="${msg}" and message="${message}"`)
-			return
+		} else {
+			super(msg || message)
 		}
-		super(msg || message)
 		this.name = this.constructor.name
+		this.meta = {} // ensure meta property exists, incase twerrObj is a generic error.
 		for (const kk of Object.keys(twerrObj)) {
 			this[kk] = twerrObj[kk]
 		}
